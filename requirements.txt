@@ -1,0 +1,11 @@
+# Core data + ML dependencies used by Bot_de_Similaridad_de_Jugadores.ipynb
+pandas
+requests
+scikit-learn
+ipywidgets
+
+# Notebook runtime (Jupyter Lab / classic notebook + execution tooling)
+ipython
+jupyterlab
+notebook
+nbconvert
