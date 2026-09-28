@@ -25,15 +25,17 @@ pip install -r requirements.txt
 Antes de la búsqueda continua, `conocer` junta tres cosas y escribe `perfil.yaml`:
 
 1. **Un archivo de CV** (`.txt`, `.md`, `.pdf` o `.docx`): nombre, titular, experiencia, educación, habilidades e idiomas.
-2. **Tu perfil de LinkedIn**, de una de estas dos formas:
-   - la URL pública (`https://www.linkedin.com/in/tu-usuario/`), que se lee como la vería un visitante sin sesión;
-   - el ZIP de *Ajustes → Privacidad de los datos → Obtener una copia de tus datos* (`--export`), que trae habilidades, descripciones de cada rol e idiomas completos. Es la vía más fiel, porque LinkedIn esconde gran parte del perfil si no iniciás sesión.
+2. **Tu perfil de LinkedIn**, de una de estas tres formas:
+   - el PDF que genera LinkedIn desde tu perfil (*Más → Guardar como PDF*), con `--export perfil.pdf`. Es inmediato y trae nombre, titular, extracto, experiencia, educación, aptitudes principales e idiomas;
+   - el ZIP de *Ajustes → Privacidad de los datos → Obtener una copia de tus datos*, también con `--export`. Tarda hasta 24 h pero es el más completo (todas las habilidades y la descripción de cada rol);
+   - la URL pública (`https://www.linkedin.com/in/tu-usuario/`), que se lee como la vería un visitante sin sesión. LinkedIn esconde gran parte del perfil y a veces bloquea la consulta.
 3. **Un cuestionario** sobre lo que el CV no dice: si el remoto es excluyente, si te interesa relocation y a dónde, salario mínimo, tipo de contrato, disponibilidad, viajes, seniority, industrias, palabras y empresas a evitar, qué estás aprendiendo y qué tiene que tener el próximo rol.
 
 ```bash
+python -m job_agent conocer --cv cv.pdf --export Profile.pdf              # PDF "Guardar como PDF"
+python -m job_agent conocer --cv cv.pdf --export LinkedInExport.zip       # ZIP "copia de tus datos"
 python -m job_agent conocer --cv cv.pdf --linkedin https://www.linkedin.com/in/tu-usuario/
-python -m job_agent conocer --cv cv.pdf --export LinkedInExport.zip
-python -m job_agent conocer --cv cv.pdf --respuestas respuestas.yaml   # sin preguntas por consola
+python -m job_agent conocer --cv cv.pdf --respuestas respuestas.yaml      # sin preguntas por consola
 ```
 
 La primera vez, la biografía del `perfil.ejemplo.yaml` no se mezcla con la tuya: solo se conservan búsquedas y reglas que ya hubieras editado. Si más adelante actualizás el CV, `--sobrescribir` pisa la biografía guardada. No subas el CV al repo (`cv.*` está en `.gitignore`).
@@ -239,7 +241,7 @@ agente_empleo/
 │   ├── tracker.py           # reglas de seguimiento y estadísticas del embudo
 │   └── sources/
 │       ├── linkedin.py         # búsqueda pública de ofertas e importación por URL
-│       └── linkedin_profile.py # perfil público o ZIP de "descargar mis datos"
+│       └── linkedin_profile.py # perfil público, PDF "guardar como PDF" o ZIP de "descargar mis datos"
 └── tests/
 ```
 
