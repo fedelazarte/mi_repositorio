@@ -15,6 +15,8 @@ from .matcher import score_job, score_jobs
 from .models import CLOSED_STATUSES, STATUSES, Job
 from .profile import Profile, ProfileError
 from .sources.linkedin import LinkedInError, LinkedInGuestSource
+from .notify import notify_high_matches
+from .onboarding import run_onboarding
 from .tracker import auto_expire, funnel_stats, pending_follow_ups
 
 log = logging.getLogger("job_agent")
@@ -57,6 +59,27 @@ def _score_and_store(db: Database, jobs: list[Job], profile: Profile, use_llm: b
     return results
 
 
+def _notify(db: Database, profile: Profile, enabled: bool) -> None:
+    if not enabled:
+        return
+    result = notify_high_matches(db, profile)
+    if result.sent:
+        cuantas = "1 oferta" if len(result.sent) == 1 else f"{len(result.sent)} ofertas"
+        print(f"\nMail enviado a {result.to}: {cuantas} con match ≥ {profile.umbral_email:.0f}.")
+    elif result.reason == "sin_smtp":
+        cuantas = "1 oferta supera" if len(result.pending) == 1 else f"{len(result.pending)} ofertas superan"
+        print(f"\n{cuantas} el {profile.umbral_email:.0f}, pero falta configurar el mail.")
+        print("Definí JOB_AGENT_SMTP_HOST, JOB_AGENT_SMTP_USER y JOB_AGENT_SMTP_PASSWORD.")
+        for row in result.pending:
+            print(f"  {row['score']:.0f}  {row['title']} — {row['company']}")
+    elif result.reason == "sin_email":
+        cuantas = "1 oferta" if len(result.pending) == 1 else f"{len(result.pending)} ofertas"
+        print(f"\nHay {cuantas} con match ≥ {profile.umbral_email:.0f} y el perfil no tiene contacto.email.")
+        print("Agregalo con `conocer` o en perfil.yaml.")
+    elif result.reason == "error_smtp":
+        print(f"\nNo pude enviar {len(result.pending)} aviso(s). Revisá la config SMTP (-v para el detalle).")
+
+
 def _print_match_row(row) -> None:
     print(f"\n[{row['id']}] {row['title']} — {row['company']}  ({row['location']})")
     print(f"  Match: {row['score']:.0f}/100   Estado: {row['status']}   Publicada: {row['posted_at'] or '?'}")
@@ -88,6 +111,14 @@ def cmd_perfil(args) -> None:
     print(f"Aprendiendo    : {', '.join(p.aprendiendo) or '-'}")
     print(f"Evitar         : {', '.join(p.evitar) or '-'}")
     print(f"Consultas      : {len(p.consultas)} (últimos {p.publicado_ultimos_dias} días)")
+    remoto = "sí, excluyente" if p.remoto_excluyente else "no"
+    relocation = "sí" if p.relocation else "no"
+    if p.relocation_destinos:
+        relocation += f" ({', '.join(p.relocation_destinos)})"
+    print(f"Remoto excl.   : {remoto}")
+    print(f"Relocation     : {relocation}")
+    print(f"Salario mínimo : {f'{p.salario_minimo:.0f} {p.moneda}' if p.salario_minimo else '-'}")
+    print(f"Avisos por mail: {p.email or '(sin mail)'} cuando el match sea ≥ {p.umbral_email:.0f}")
 
 
 def cmd_buscar(args) -> None:
@@ -100,6 +131,8 @@ def cmd_buscar(args) -> None:
     if not queries:
         sys.exit("No hay consultas: agregalas en `busqueda.consultas` del perfil o pasá --keywords.")
 
+    if not (profile.raw.get("fuentes") or {}).get("actualizado"):
+        print("Aviso: todavía no corriste `conocer` (CV + LinkedIn + preguntas). El match usa solo lo que haya en perfil.yaml.\n")
     print(f"Buscando en LinkedIn con {len(queries)} consulta(s)...")
     jobs = source.search_many(queries, posted_within_days=profile.publicado_ultimos_dias, limit=args.limite or profile.max_resultados)
     new_jobs = [j for j in jobs if db.upsert_job(j)]
@@ -132,6 +165,7 @@ def cmd_buscar(args) -> None:
         print("  (ninguna por ahora; probá `matches --min 50` para ver más)")
     for row in rows:
         _print_match_row(row)
+    _notify(db, profile, not args.sin_mail)
     db.close()
 
 
@@ -148,6 +182,7 @@ def cmd_importar(args) -> None:
         db.upsert_job(job)
         _score_and_store(db, [job], profile, args.llm)
         _print_match_row(db.get_match_row(job.id))
+    _notify(db, profile, not args.sin_mail)
     db.close()
 
 
@@ -164,6 +199,7 @@ def cmd_agregar(args) -> None:
     db.upsert_job(job)
     _score_and_store(db, [job], profile, args.llm)
     _print_match_row(db.get_match_row(job.id))
+    _notify(db, profile, not args.sin_mail)
     db.close()
 
 
@@ -306,6 +342,27 @@ def cmd_repuntuar(args) -> None:
     jobs = [j for j in jobs if j is not None]
     _score_and_store(db, jobs, profile, args.llm)
     print(f"Re-puntuadas {len(jobs)} ofertas con el perfil actual.")
+    _notify(db, profile, not args.sin_mail)
+    db.close()
+
+
+def cmd_conocer(args) -> None:
+    try:
+        run_onboarding(
+            cv_path=Path(args.cv) if args.cv else None,
+            linkedin_url=args.linkedin,
+            linkedin_export=Path(args.export) if args.export else None,
+            answers_path=Path(args.respuestas) if args.respuestas else None,
+            overwrite=args.sobrescribir,
+        )
+    except ProfileError as exc:
+        sys.exit(f"Error: {exc}")
+
+
+def cmd_notificar(args) -> None:
+    profile = _load_profile()
+    db = _open_db()
+    _notify(db, profile, enabled=True)
     db.close()
 
 
@@ -320,6 +377,14 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--forzar", action="store_true")
     sp.set_defaults(func=cmd_perfil)
 
+    sp = sub.add_parser("conocer", help="armar el perfil: CV + LinkedIn + preguntas")
+    sp.add_argument("--cv", help="CV en .txt, .md, .pdf o .docx")
+    sp.add_argument("--linkedin", help="URL pública del perfil (linkedin.com/in/...)")
+    sp.add_argument("--export", help="ZIP de 'descargar mis datos' de LinkedIn")
+    sp.add_argument("--respuestas", help="YAML con las respuestas, para no preguntar por consola")
+    sp.add_argument("--sobrescribir", action="store_true", help="pisar la biografía ya guardada con el CV/LinkedIn")
+    sp.set_defaults(func=cmd_conocer)
+
     sp = sub.add_parser("buscar", help="buscar ofertas en LinkedIn y puntuarlas")
     sp.add_argument("--keywords", help="ignorar las consultas del perfil y buscar esto")
     sp.add_argument("--location", default="")
@@ -328,11 +393,13 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--top", type=int, default=10, help="cuántos matches mostrar")
     sp.add_argument("--sin-detalle", action="store_true", help="no descargar descripciones (más rápido, peor matching)")
     sp.add_argument("--llm", action="store_true", help="refinar con LLM (requiere OPENAI_API_KEY)")
+    sp.add_argument("--sin-mail", action="store_true", help="no avisar por mail aunque el match supere el umbral")
     sp.set_defaults(func=cmd_buscar)
 
     sp = sub.add_parser("importar", help="importar ofertas por URL o id de LinkedIn")
     sp.add_argument("urls", nargs="+")
     sp.add_argument("--llm", action="store_true")
+    sp.add_argument("--sin-mail", action="store_true")
     sp.set_defaults(func=cmd_importar)
 
     sp = sub.add_parser("agregar", help="cargar a mano una oferta de cualquier portal")
@@ -343,6 +410,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--id")
     sp.add_argument("--descripcion", help="texto o ruta a un .txt (o pasalo por stdin)")
     sp.add_argument("--llm", action="store_true")
+    sp.add_argument("--sin-mail", action="store_true")
     sp.set_defaults(func=cmd_agregar)
 
     sp = sub.add_parser("matches", help="listar ofertas ordenadas por match")
@@ -393,7 +461,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     sp = sub.add_parser("repuntuar", help="volver a puntuar todo tras cambiar el perfil")
     sp.add_argument("--llm", action="store_true")
+    sp.add_argument("--sin-mail", action="store_true")
     sp.set_defaults(func=cmd_repuntuar)
+
+    sp = sub.add_parser("notificar", help="enviar los mails de matches altos que todavía no se avisaron")
+    sp.set_defaults(func=cmd_notificar)
     return p
 
 

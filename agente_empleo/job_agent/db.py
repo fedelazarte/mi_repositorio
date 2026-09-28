@@ -39,6 +39,12 @@ CREATE TABLE IF NOT EXISTS events (
     note TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_events_job ON events(job_id);
+CREATE TABLE IF NOT EXISTS notifications (
+    job_id TEXT PRIMARY KEY REFERENCES jobs(id),
+    score REAL NOT NULL,
+    to_email TEXT,
+    sent_at TEXT NOT NULL
+);
 """
 
 
@@ -214,6 +220,26 @@ class Database:
     def status_counts(self) -> dict[str, int]:
         rows = self.conn.execute("SELECT status, COUNT(*) AS n FROM applications GROUP BY status").fetchall()
         return {r["status"]: r["n"] for r in rows}
+
+    def high_matches_not_notified(self, min_score: float) -> list[sqlite3.Row]:
+        return self.conn.execute(
+            """
+            SELECT j.id, j.title, j.company, j.location, j.url, m.score, m.reasons, m.gaps, m.advice
+            FROM matches m
+            JOIN jobs j ON j.id = m.job_id
+            LEFT JOIN notifications n ON n.job_id = m.job_id
+            WHERE m.score >= ? AND n.job_id IS NULL
+            ORDER BY m.score DESC
+            """,
+            (min_score,),
+        ).fetchall()
+
+    def mark_notified(self, job_id: str, score: float, to_email: str) -> None:
+        self.conn.execute(
+            "INSERT OR REPLACE INTO notifications (job_id, score, to_email, sent_at) VALUES (?, ?, ?, ?)",
+            (job_id, score, to_email, now_iso()),
+        )
+        self.conn.commit()
 
     def scores_by_status(self) -> dict[str, list[float]]:
         rows = self.conn.execute(
