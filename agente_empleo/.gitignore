@@ -1,0 +1,10 @@
+# Datos personales: nunca subir el perfil real ni la base de postulaciones
+perfil.yaml
+*.db
+*.db-journal
+exportaciones/
+
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/

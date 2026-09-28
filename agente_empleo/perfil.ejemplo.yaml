@@ -1,0 +1,83 @@
+# Perfil profesional: copiá este archivo a `perfil.yaml` y completalo con tus datos.
+# El agente usa TODO este contenido para calcular qué tan bien encajás con cada oferta.
+
+nombre: Federico Lazarte
+titulo_actual: Data Analyst
+anios_experiencia: 4
+
+resumen: >
+  Analista de datos con 4 años de experiencia construyendo dashboards, pipelines de datos
+  y modelos de similitud/recomendación en Python. Trabajé con datos deportivos y de negocio,
+  automatizando reportes y consumiendo APIs REST. Busco crecer hacia roles de Data Science /
+  Analytics Engineering en equipos de producto.
+
+experiencia:
+  - empresa: Empresa Ejemplo S.A.
+    puesto: Data Analyst
+    periodo: 2022 - actualidad
+    descripcion: >
+      Dashboards en Power BI y Looker Studio, modelado en SQL (BigQuery), automatización de
+      reportes con Python y pandas, análisis de métricas de producto y A/B tests.
+  - empresa: Startup Deportiva
+    puesto: Analista de Datos Jr.
+    periodo: 2020 - 2022
+    descripcion: >
+      Scraping y consumo de APIs de fútbol, modelo de similitud de jugadores con
+      scikit-learn (cosine similarity), notebooks en Colab, visualizaciones con matplotlib.
+
+educacion:
+  - Licenciatura en Estadística (en curso) - UBA
+
+# Habilidades: usá los nombres tal como suelen aparecer en las ofertas.
+habilidades:
+  - Python
+  - pandas
+  - scikit-learn
+  - SQL
+  - BigQuery
+  - Power BI
+  - Looker Studio
+  - Excel
+  - Git
+  - APIs REST
+  - estadística
+  - A/B testing
+  - machine learning
+
+idiomas:
+  - español nativo
+  - inglés intermedio-avanzado (B2)
+
+# Lo que querés para tu próximo paso. Esto pesa fuerte en el matching.
+aspiraciones:
+  roles_objetivo:
+    - Data Scientist
+    - Analytics Engineer
+    - Data Analyst Senior
+  seniority: [semi senior, senior]        # junior | semi senior | senior | lead | manager
+  modalidad: [remoto, híbrido]            # remoto | híbrido | presencial
+  ubicaciones: [Buenos Aires, Argentina, LATAM, Remote]
+  industrias_preferidas: [tecnología, deportes, fintech, producto]
+  # Palabras que, si aparecen en el título o descripción, restan puntos.
+  evitar: [ventas, call center, comisión, unpaid, pasantía]
+  # Habilidades que estás aprendiendo: si una oferta las pide no se cuentan como brecha grave.
+  aprendiendo: [dbt, Airflow, Spark]
+
+# Cómo buscar en LinkedIn. Cada consulta se ejecuta por separado.
+busqueda:
+  consultas:
+    - keywords: "Data Scientist"
+      location: "Argentina"
+    - keywords: "Analytics Engineer"
+      location: "Argentina"
+    - keywords: "Data Analyst"
+      location: "Latin America"
+      remoto: true
+  publicado_ultimos_dias: 7
+  max_resultados_por_consulta: 25
+
+# Reglas de seguimiento de postulaciones.
+seguimiento:
+  dias_sin_respuesta_para_avisar: 10   # sugerir mensaje de follow-up al reclutador
+  dias_para_marcar_sin_respuesta: 30   # con `seguimiento --auto` se marcan como "sin_respuesta"
+  puntaje_minimo_para_recomendar: 65
