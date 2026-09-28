@@ -6,6 +6,7 @@ El puntaje (0-100) combina señales explicables, para que cada match venga con r
 * rol: qué tanto se parece el título al de tus roles objetivo,
 * similitud textual (TF-IDF coseno) entre tu perfil completo y la descripción,
 * seniority, modalidad y ubicación según tus aspiraciones,
+* restricciones del cuestionario: remoto excluyente, relocation, salario, contrato, viaje y empresas a evitar,
 * penalización por palabras que querés evitar.
 
 Opcionalmente, `llm.score_with_llm` refina el puntaje con un modelo de lenguaje.
@@ -90,6 +91,23 @@ SKILL_PATTERNS = {
 }
 
 LANGUAGE_KEYWORDS = ["ingles", "english", "portugues", "portuguese", "aleman", "german", "frances", "french", "italiano", "italian"]
+
+CONTRACT_ALIASES = {
+    "full time": "full-time", "fulltime": "full-time", "jornada completa": "full-time", "tiempo completo": "full-time",
+    "part time": "part-time", "parttime": "part-time", "media jornada": "part-time", "tiempo parcial": "part-time",
+    "freelance": "contractor", "contractor": "contractor", "por contrato": "contractor",
+    "pasantia": "pasantía", "internship": "pasantía", "trainee": "pasantía",
+}
+CONTRACT_PATTERNS = [
+    ("full-time", re.compile(r"jornada completa|full[- ]?time|tiempo completo")),
+    ("part-time", re.compile(r"part[- ]?time|media jornada|tiempo parcial")),
+    ("contractor", re.compile(r"contractor|freelance|por contrato")),
+    ("pasantía", re.compile(r"pasantia|internship")),
+]
+SALARY_RE = re.compile(
+    r"(?P<cur>usd|u\$s|us\$|ars|eur|€)\s*(?P<num>\d[\d.,]*)|(?P<num2>\d[\d.,]*)\s*(?P<cur2>usd|dolares|dólares|ars|pesos|eur|euros)"
+)
+TRAVEL_RE = re.compile(r"viajes? frecuentes|must travel|travel required|disponibilidad para viajar|viajar frecuentemente")
 
 
 def normalize(text: str) -> str:
@@ -200,6 +218,58 @@ def _tfidf_scores(profile_text: str, jobs: list[Job]) -> list[float]:
     return [min(1.0, float(s) / 0.5) for s in sims]
 
 
+def _parse_amount(raw: str) -> float | None:
+    text = raw.strip()
+    if "," in text and "." in text:
+        if text.rfind(",") > text.rfind("."):
+            text = text.replace(".", "").replace(",", ".")
+        else:
+            text = text.replace(",", "")
+    elif "," in text:
+        text = text.replace(",", "") if len(text.split(",")[-1]) == 3 else text.replace(",", ".")
+    elif text.count(".") > 1 or ("." in text and len(text.split(".")[-1]) == 3):
+        text = text.replace(".", "")
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+def _currency(token: str) -> str | None:
+    token = normalize(token)
+    if token in {"usd", "u$s", "us$"}:
+        return "USD"
+    if token in {"ars", "pesos"}:
+        return "ARS"
+    if token in {"eur", "euros", "€"}:
+        return "EUR"
+    return None
+
+
+def salary_below_minimum(job: Job, profile: Profile) -> float | None:
+    """Si la oferta declara un tope en la misma moneda y está debajo del mínimo, lo devuelve."""
+    if not profile.salario_minimo or not profile.moneda:
+        return None
+    amounts = []
+    for match in SALARY_RE.finditer(normalize(job.full_text)):
+        currency = _currency(match.group("cur") or match.group("cur2") or "")
+        amount = _parse_amount(match.group("num") or match.group("num2") or "")
+        if currency == profile.moneda and amount:
+            amounts.append(amount)
+    if not amounts:
+        return None
+    ceiling = max(amounts)
+    return ceiling if ceiling < profile.salario_minimo else None
+
+
+def detect_contract(job: Job) -> str | None:
+    text = normalize(f"{job.employment_type or ''} {job.description[:1500]}")
+    for name, pattern in CONTRACT_PATTERNS:
+        if pattern.search(text):
+            return name
+    return None
+
+
 def score_job(job: Job, profile: Profile, text_similarity: float = 0.0) -> MatchResult:
     reasons: list[str] = []
     gaps: list[str] = []
@@ -258,15 +328,29 @@ def score_job(job: Job, profile: Profile, text_similarity: float = 0.0) -> Match
         modality_score = 0.3
         gaps.append(f"Modalidad {job_modality} (buscás {', '.join(sorted(wanted_modalities))})")
 
-    # --- ubicación
+    # --- ubicación (incluye destinos de relocation y la ciudad donde vive)
     loc_norm = normalize(job.location)
-    if not profile.ubicaciones or not loc_norm:
+    preferred = list(profile.ubicaciones)
+    if profile.ubicacion_actual:
+        preferred.append(profile.ubicacion_actual)
+    if profile.relocation:
+        preferred.extend(profile.relocation_destinos)
+    relocation_penalty = 0
+    matches_location = any(normalize(place) and normalize(place) in loc_norm for place in preferred)
+    matches_relocation = profile.relocation and any(
+        normalize(place) and normalize(place) in loc_norm for place in profile.relocation_destinos
+    )
+    if not preferred or not loc_norm:
         location_score = 0.6
-    elif job_modality == "remoto" or any(normalize(u) in loc_norm for u in profile.ubicaciones):
+    elif job_modality == "remoto" or matches_location:
         location_score = 1.0
+        if matches_relocation:
+            reasons.append(f"La ubicación encaja con tu disposición a relocation ({job.location})")
     else:
         location_score = 0.4
         gaps.append(f"Ubicación '{job.location}' fuera de tus preferencias")
+        if not profile.relocation:
+            relocation_penalty = 12
 
     total = 100 * (
         WEIGHTS["skills"] * skills_score
@@ -276,6 +360,37 @@ def score_job(job: Job, profile: Profile, text_similarity: float = 0.0) -> Match
         + WEIGHTS["modality"] * modality_score
         + WEIGHTS["location"] * location_score
     )
+
+    # --- restricciones que salieron del cuestionario
+    if profile.remoto_excluyente and job_modality != "remoto":
+        if job_modality is None:
+            total -= 15
+            gaps.append("No aclara si es remoto y para vos el remoto es excluyente")
+        else:
+            total -= 40
+            gaps.append(f"Pedís remoto excluyente y la oferta es {job_modality}")
+    total -= relocation_penalty
+
+    wanted_contracts = {CONTRACT_ALIASES.get(normalize(c), normalize(c)) for c in profile.tipo_contrato}
+    job_contract = detect_contract(job)
+    if wanted_contracts and job_contract and job_contract not in wanted_contracts:
+        total -= 20
+        gaps.append(f"Contrato '{job_contract}' (aceptás {', '.join(sorted(wanted_contracts))})")
+
+    low_salary = salary_below_minimum(job, profile)
+    if low_salary is not None:
+        total -= 25
+        gaps.append(f"Pagan {low_salary:.0f} {profile.moneda}, debajo de tu mínimo ({profile.salario_minimo:.0f})")
+
+    if profile.viaje == "no" and TRAVEL_RE.search(job_text):
+        total -= 12
+        gaps.append("Pide viajar y vos no querés viajar")
+
+    company_norm = normalize(job.company)
+    for company in profile.empresas_evitar:
+        if company and _contains(normalize(company), company_norm):
+            total -= 40
+            gaps.append(f"La empresa '{job.company}' está en tu lista de empresas a evitar")
 
     # --- palabras a evitar
     title_norm = normalize(job.title)

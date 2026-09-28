@@ -44,6 +44,24 @@ class Profile:
         self.industrias: list[str] = _as_list(asp.get("industrias_preferidas"))
         self.evitar: list[str] = _as_list(asp.get("evitar"))
         self.aprendiendo: list[str] = _as_list(asp.get("aprendiendo"))
+        self.remoto_excluyente: bool = bool(asp.get("remoto_excluyente", False))
+        self.relocation: bool = bool(asp.get("relocation", False))
+        self.relocation_destinos: list[str] = _as_list(asp.get("relocation_destinos"))
+        self.empresas_evitar: list[str] = _as_list(asp.get("empresas_evitar"))
+        self.tipo_contrato: list[str] = [c.lower() for c in _as_list(asp.get("tipo_contrato"))]
+        self.disponibilidad: str = asp.get("disponibilidad") or ""
+        self.viaje: str = (asp.get("viaje") or "").lower()
+        self.motivacion: str = asp.get("motivacion") or ""
+        self.autorizacion_trabajo: str = asp.get("autorizacion_trabajo") or ""
+        self.moneda: str = (asp.get("moneda") or "").upper()
+        salario = asp.get("salario_minimo")
+        self.salario_minimo: float | None = float(salario) if salario not in (None, "", 0, "0") else None
+
+        contacto = data.get("contacto") or {}
+        self.email: str = contacto.get("email") or ""
+        self.telefono: str = contacto.get("telefono") or ""
+        self.linkedin: str = contacto.get("linkedin") or ""
+        self.ubicacion_actual: str = data.get("ubicacion_actual") or ""
 
         self.consultas: list[dict] = busq.get("consultas") or []
         self.publicado_ultimos_dias: int = int(busq.get("publicado_ultimos_dias") or 7)
@@ -52,6 +70,9 @@ class Profile:
         self.dias_aviso_followup: int = int(seg.get("dias_sin_respuesta_para_avisar") or 10)
         self.dias_sin_respuesta: int = int(seg.get("dias_para_marcar_sin_respuesta") or 30)
         self.puntaje_minimo: float = float(seg.get("puntaje_minimo_para_recomendar") or 65)
+        notif = data.get("notificaciones") or {}
+        self.email_activo: bool = bool(notif.get("email", True))
+        self.umbral_email: float = float(notif.get("umbral_match", 85))
 
         if not self.habilidades:
             raise ProfileError("El perfil necesita al menos una entrada en `habilidades`.")
@@ -67,6 +88,8 @@ class Profile:
         chunks.append(" ".join(self.habilidades))
         chunks.append(" ".join(self.roles_objetivo))
         chunks.append(" ".join(self.industrias))
+        chunks.append(self.motivacion)
+        chunks.append(self.autorizacion_trabajo)
         return "\n".join(c for c in chunks if c)
 
     @classmethod

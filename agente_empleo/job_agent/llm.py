@@ -26,9 +26,12 @@ PERFIL:
 ASPIRACIONES:
 - Roles objetivo: {roles}
 - Seniority buscado: {seniority}
-- Modalidad: {modalidad}
+- Modalidad: {modalidad}{remoto_excluyente}
+- Relocation: {relocation}
 - Ubicaciones: {ubicaciones}
+- Salario mínimo: {salario}
 - Evitar: {evitar}
+- Empresas a evitar: {empresas}
 
 OFERTA:
 Título: {titulo}
@@ -55,8 +58,12 @@ def score_with_llm(job: Job, profile: Profile, heuristic: MatchResult, weight_ll
         roles=", ".join(profile.roles_objetivo),
         seniority=", ".join(profile.seniority) or "sin preferencia",
         modalidad=", ".join(profile.modalidad) or "sin preferencia",
+        remoto_excluyente=" (excluyente: si no es remoto, no sirve)" if profile.remoto_excluyente else "",
+        relocation=("sí, hacia " + ", ".join(profile.relocation_destinos)) if profile.relocation else "no",
         ubicaciones=", ".join(profile.ubicaciones) or "sin preferencia",
+        salario=f"{profile.salario_minimo:.0f} {profile.moneda}" if profile.salario_minimo else "sin mínimo",
         evitar=", ".join(profile.evitar) or "-",
+        empresas=", ".join(profile.empresas_evitar) or "-",
         titulo=job.title,
         empresa=job.company,
         ubicacion=job.location,
