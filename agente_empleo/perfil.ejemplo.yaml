@@ -48,6 +48,14 @@ idiomas:
   - español nativo
   - inglés intermedio-avanzado (B2)
 
+# Dónde avisarte. `conocer` lo completa con tus respuestas.
+contacto:
+  email: ""
+  telefono: ""
+  linkedin: ""
+
+ubicacion_actual: Buenos Aires
+
 # Lo que querés para tu próximo paso. Esto pesa fuerte en el matching.
 aspiraciones:
   roles_objetivo:
@@ -56,6 +64,17 @@ aspiraciones:
     - Data Analyst Senior
   seniority: [semi senior, senior]        # junior | semi senior | senior | lead | manager
   modalidad: [remoto, híbrido]            # remoto | híbrido | presencial
+  remoto_excluyente: false                 # true: si no es remoto, el match cae fuerte
+  relocation: false                        # true: te mudás por el trabajo
+  relocation_destinos: []                  # ej. [España, Ciudad de México]
+  salario_minimo:                          # número mensual; vacío = no filtrar
+  moneda: USD
+  tipo_contrato: [full-time]               # full-time | part-time | contractor
+  disponibilidad: 30 días
+  viaje: ocasional                         # no | ocasional | frecuente
+  empresas_evitar: []
+  motivacion: "Quiero pasar de reportes a modelos que se usen en producto."
+  autorizacion_trabajo: Argentina
   ubicaciones: [Buenos Aires, Argentina, LATAM, Remote]
   industrias_preferidas: [tecnología, deportes, fintech, producto]
   # Palabras que, si aparecen en el título o descripción, restan puntos.
@@ -81,3 +100,8 @@ seguimiento:
   dias_sin_respuesta_para_avisar: 10   # sugerir mensaje de follow-up al reclutador
   dias_para_marcar_sin_respuesta: 30   # con `seguimiento --auto` se marcan como "sin_respuesta"
   puntaje_minimo_para_recomendar: 65
+
+# Mail solo cuando el match es realmente alto.
+notificaciones:
+  email: true
+  umbral_match: 85
