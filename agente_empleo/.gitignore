@@ -1,5 +1,7 @@
 # Datos personales: nunca subir el perfil real ni la base de postulaciones
 perfil.yaml
+respuestas.yaml
+cv.*
 *.db
 *.db-journal
 exportaciones/
