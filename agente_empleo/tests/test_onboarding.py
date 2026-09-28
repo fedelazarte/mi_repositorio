@@ -7,7 +7,47 @@ from docx import Document
 from job_agent.cv_parser import parse_cv_text
 from job_agent.onboarding import run_onboarding
 from job_agent.profile import Profile
-from job_agent.sources.linkedin_profile import parse_export_zip, parse_public_profile
+from job_agent.sources.linkedin_profile import parse_export, parse_export_zip, parse_profile_pdf_text, parse_public_profile
+
+# Texto tal como lo devuelve pypdf para el PDF de "Guardar como PDF" (columna izquierda primero, paginado).
+PROFILE_PDF_TEXT = """Contactar
+ana.perez@example.com
+www.linkedin.com/in/ana-perez
+(LinkedIn)
+Aptitudes principales
+Python
+SQL
+Power BI
+Languages
+Inglés (Professional Working)
+Certifications
+Google Data Analytics
+Ana Pérez
+Data Analyst | Python, SQL, Power BI
+Buenos Aires, Argentina
+Extracto
+Analista de datos con 4 años de experiencia en producto.
+Experiencia
+Empresa Real S.A.
+Data Analyst
+enero de 2022 - Present (4 años 9 meses)
+Buenos Aires, Argentina
+Dashboards en Power BI y modelado SQL en BigQuery.
+Startup Deportiva
+2 años
+Analista de Datos Sr.
+marzo de 2021 - diciembre de 2021 (10 meses)
+Analista de Datos Jr.
+enero de 2020 - febrero de 2021 (1 año 2 meses)
+Remoto
+Modelo de similitud de jugadores con scikit-learn.
+Page 1 of 2
+
+Educación
+Universidad de Buenos Aires
+Licenciatura, Estadística · (2016 - 2021)
+Page 2 of 2
+"""
 
 CV = """
 Ana Pérez
@@ -144,6 +184,41 @@ def test_export_zip(tmp_path: Path):
     assert "Python" in draft["habilidades"] and "SQL" in draft["habilidades"]
     assert any("Inglés" in i for i in draft["idiomas"])
     assert any("UBA" in e for e in draft["educacion"])
+
+
+def test_profile_pdf_text():
+    draft = parse_profile_pdf_text(PROFILE_PDF_TEXT)
+    assert draft["nombre"] == "Ana Pérez"
+    assert draft["titulo_actual"].startswith("Data Analyst")
+    assert draft["ubicacion_actual"] == "Buenos Aires, Argentina"
+    assert draft["contacto"]["email"] == "ana.perez@example.com"
+    assert "ana-perez" in draft["contacto"]["linkedin"]
+    assert draft["resumen"].startswith("Analista de datos")
+    roles = draft["experiencia"]
+    assert [(r["empresa"], r["puesto"]) for r in roles] == [
+        ("Empresa Real S.A.", "Data Analyst"),
+        ("Startup Deportiva", "Analista de Datos Sr."),
+        ("Startup Deportiva", "Analista de Datos Jr."),
+    ]
+    assert roles[0]["periodo"] == "enero de 2022 - actualidad"
+    assert roles[0]["ubicacion"] == "Buenos Aires, Argentina"
+    assert "BigQuery" in roles[0]["descripcion"]
+    assert roles[2]["ubicacion"] == "Remoto"
+    assert draft["habilidades"][:3] == ["Python", "SQL", "Power BI"]
+    assert "scikit-learn" in draft["habilidades"]
+    assert draft["idiomas"] == ["Inglés (Professional Working)"]
+    assert draft["educacion"] == ["Universidad de Buenos Aires — Licenciatura, Estadística (2016 - 2021)"]
+
+
+def test_parse_export_rejects_unknown_format(tmp_path: Path):
+    import pytest
+
+    from job_agent.sources.linkedin_profile import LinkedInProfileError
+
+    bogus = tmp_path / "perfil.csv"
+    bogus.write_text("x", encoding="utf-8")
+    with pytest.raises(LinkedInProfileError):
+        parse_export(bogus)
 
 
 def test_conocer_builds_profile_and_ignores_example_biography(tmp_path: Path):

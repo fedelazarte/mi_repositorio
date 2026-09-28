@@ -380,7 +380,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("conocer", help="armar el perfil: CV + LinkedIn + preguntas")
     sp.add_argument("--cv", help="CV en .txt, .md, .pdf o .docx")
     sp.add_argument("--linkedin", help="URL pública del perfil (linkedin.com/in/...)")
-    sp.add_argument("--export", help="ZIP de 'descargar mis datos' de LinkedIn")
+    sp.add_argument("--export", help="ZIP de 'descargar mis datos' o PDF de 'guardar como PDF' de tu perfil de LinkedIn")
     sp.add_argument("--respuestas", help="YAML con las respuestas, para no preguntar por consola")
     sp.add_argument("--sobrescribir", action="store_true", help="pisar la biografía ya guardada con el CV/LinkedIn")
     sp.set_defaults(func=cmd_conocer)

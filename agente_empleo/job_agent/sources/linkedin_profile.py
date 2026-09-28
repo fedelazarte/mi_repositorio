@@ -1,9 +1,11 @@
 """Lectura del perfil de LinkedIn del candidato.
 
-Dos vías, de más completa a más liviana:
+Tres vías, de más completa a más liviana:
 
 * el ZIP oficial de "Descargar mis datos" (Settings → Data privacy → Get a copy of your data),
   que trae experiencia, habilidades, educación e idiomas completos;
+* el PDF que genera el botón "Más → Guardar como PDF" del propio perfil
+  (nombre, titular, extracto, experiencia, educación, aptitudes principales e idiomas);
 * la página pública `linkedin.com/in/<usuario>`, que un visitante ve sin iniciar sesión
   (nombre, titular, resumen y experiencia; las habilidades suelen estar ocultas).
 
@@ -21,7 +23,8 @@ from pathlib import Path
 import requests
 from bs4 import BeautifulSoup
 
-from ..cv_parser import infer_years, skills_mentioned
+from ..cv_parser import EMAIL_RE, LINKEDIN_RE, PHONE_RE, infer_years, skills_mentioned
+from ..matcher import normalize
 from .linkedin import HEADERS, LinkedInError
 
 PROFILE_URL_RE = re.compile(r"linkedin\.com/in/([^/?#]+)", re.I)
@@ -178,6 +181,227 @@ def _period(start: str, end: str) -> str:
     if start:
         return f"{start} - actualidad"
     return end
+
+
+def parse_export(path: Path) -> dict:
+    """Acepta el ZIP de 'descargar mis datos' o el PDF de 'guardar perfil como PDF'."""
+    suffix = path.suffix.lower()
+    if suffix == ".zip":
+        return parse_export_zip(path)
+    if suffix == ".pdf":
+        return parse_profile_pdf(path)
+    raise LinkedInProfileError(
+        f"No sé leer '{path.name}'. Pasá el ZIP de 'Obtener una copia de tus datos' o el PDF de "
+        "'Más → Guardar como PDF' de tu perfil."
+    )
+
+
+# ---------------------------------------------------------------- perfil PDF --
+PDF_SECTIONS = {
+    "contacto": ["contactar", "contact", "contacto"],
+    "habilidades": ["aptitudes principales", "principales aptitudes", "top skills", "skills", "aptitudes", "conocimientos y aptitudes"],
+    "idiomas": ["languages", "idiomas"],
+    "certificaciones": ["certifications", "certificaciones", "licencias y certificaciones"],
+    "otros": ["honors-awards", "honores y premios", "publications", "publicaciones", "patents", "patentes", "courses", "cursos", "projects", "proyectos"],
+    "resumen": ["extracto", "summary", "acerca de", "about"],
+    "experiencia": ["experiencia", "experience"],
+    "educacion": ["educación", "educacion", "education"],
+}
+PDF_HEADER_TO_SECTION = {normalize(name): key for key, names in PDF_SECTIONS.items() for name in names}
+LEFT_SECTIONS = {"contacto", "habilidades", "idiomas", "certificaciones", "otros"}
+PLACE_WORDS = {"remoto", "remote", "hibrido", "presencial", "buenos aires", "caba", "latam", "latin america"}
+
+PAGE_RE = re.compile(r"^(page|página|pagina)\s+\d+\s+(of|de)\s+\d+$", re.I)
+MONTH = r"(?:[a-záéíóú]+\.?\s+(?:de\s+)?)?"
+DATE_LINE_RE = re.compile(
+    rf"^{MONTH}(?:19|20)\d{{2}}\s*[-–]\s*(?:present|presente|actualidad|hoy|now|{MONTH}(?:19|20)\d{{2}})(?:\s*\(.*\))?$",
+    re.I,
+)
+DURATION_RE = re.compile(r"^\d+\s+(?:años?|years?|meses|months?|mes|month)(?:\s+\d+\s+(?:meses|months?|mes|month))?$", re.I)
+EDU_DETAIL_RE = re.compile(r"[·(]|\b(?:19|20)\d{2}\b")
+
+
+def _pdf_lines(text: str) -> list[str]:
+    lines = []
+    for raw in text.splitlines():
+        line = re.sub(r"\s+", " ", raw).strip()
+        if not line or PAGE_RE.match(line):
+            continue
+        lines.append(line)
+    return lines
+
+
+COUNTRIES = {
+    "argentina", "uruguay", "chile", "paraguay", "bolivia", "peru", "colombia", "ecuador", "venezuela", "mexico", "brasil", "brazil",
+    "espana", "spain", "portugal", "estados unidos", "united states", "canada", "alemania", "germany", "francia", "france",
+    "italia", "italy", "reino unido", "united kingdom", "irlanda", "ireland", "paises bajos", "netherlands", "costa rica", "panama",
+    "republica dominicana", "guatemala", "el salvador", "honduras", "nicaragua", "cuba", "puerto rico",
+}
+
+
+def _looks_like_name(line: str) -> bool:
+    words = line.split()
+    return 2 <= len(words) <= 5 and len(line) <= 60 and not any(ch.isdigit() for ch in line) and not re.search(r"[|()@/:,]", line)
+
+
+def _looks_like_place(line: str) -> bool:
+    norm = normalize(line).strip()
+    return bool(line) and len(line) <= 60 and ("," in line or norm in PLACE_WORDS or norm in COUNTRIES)
+
+
+def _sentence_like(line: str) -> bool:
+    """Una descripción termina en punto y es larga; 'Empresa Real S.A.' termina en punto pero es corta."""
+    return line.endswith((".", ",", ";", ":")) and len(line.split()) > 6
+
+
+def _looks_like_company(line: str) -> bool:
+    return len(line) <= 70 and not _sentence_like(line) and not DATE_LINE_RE.match(line) and not DURATION_RE.match(line)
+
+
+def _is_location(line: str, nxt: str, nxt2: str, multi_role: bool) -> bool:
+    """La línea que sigue a las fechas suele ser la ciudad. Se distingue de un título o una empresa nueva."""
+    if not line or line.endswith(".") or DATE_LINE_RE.match(nxt) or not _looks_like_place(line):
+        return False
+    # Si le siguen [título, fecha] y no estamos dentro de una empresa con varios roles, es una empresa nueva.
+    if DATE_LINE_RE.match(nxt2) and not multi_role and "," not in line:
+        return False
+    return True
+
+
+def _parse_pdf_experience(lines: list[str]) -> list[dict]:
+    roles: list[dict] = []
+    company = ""
+    multi_role = False
+    i = 0
+    n = len(lines)
+
+    def at(k: int) -> str:
+        return lines[k] if 0 <= k < n else ""
+
+    while i < n:
+        line = lines[i]
+        nxt, nxt2 = at(i + 1), at(i + 2)
+        if DURATION_RE.match(nxt) and _looks_like_company(line):
+            company, multi_role = line, True
+            i += 2
+            continue
+        if DATE_LINE_RE.match(nxt2) and not DATE_LINE_RE.match(nxt) and _looks_like_company(line) and not (
+            multi_role and roles and roles[-1]["empresa"] == company and _sentence_like(line)
+        ):
+            company, multi_role = line, False
+            i += 1
+            continue
+        if DATE_LINE_RE.match(nxt):
+            role = {"puesto": line, "empresa": company, "periodo": nxt, "descripcion": ""}
+            roles.append(role)
+            i += 2
+            if _is_location(at(i), at(i + 1), at(i + 2), multi_role):
+                role["ubicacion"] = at(i)
+                i += 1
+            continue
+        if roles:
+            roles[-1]["descripcion"] = f"{roles[-1]['descripcion']} {line}".strip()
+        i += 1
+    for role in roles:
+        role["periodo"] = re.sub(r"\s*\(.*\)$", "", role["periodo"])
+        role["periodo"] = re.sub(r"\b(present|presente|now|hoy)\b", "actualidad", role["periodo"], flags=re.I)
+    return roles
+
+
+def _parse_pdf_education(lines: list[str]) -> list[str]:
+    out: list[str] = []
+    i = 0
+    while i < len(lines):
+        school = lines[i]
+        detail = lines[i + 1] if i + 1 < len(lines) else ""
+        if detail and EDU_DETAIL_RE.search(detail) and not EDU_DETAIL_RE.search(school):
+            out.append(f"{school} — {detail.replace(' · ', ' ')}")
+            i += 2
+        else:
+            out.append(school)
+            i += 1
+    return out
+
+
+def parse_profile_pdf_text(text: str) -> dict:
+    """Interpreta el texto del PDF 'Guardar como PDF' de un perfil de LinkedIn."""
+    lines = _pdf_lines(text)
+    sections: dict[str, list[str]] = {}
+    left_tail: list[str] = []  # líneas de la columna izquierda: ahí queda también el bloque nombre/titular/ubicación
+    current: str | None = None
+    for line in lines:
+        header = PDF_HEADER_TO_SECTION.get(normalize(line).strip(" :"))
+        if header:
+            current = header
+            sections.setdefault(current, [])
+            continue
+        if current is None or current in LEFT_SECTIONS:
+            left_tail.append(line)
+        sections.setdefault(current or "contacto", []).append(line)
+
+    # El bloque nombre / titular [/ ubicación] es lo último que aparece antes de Extracto o Experiencia.
+    nombre = titulo = ubicacion = ""
+    tail = left_tail[-3:]
+    if len(tail) == 3 and _looks_like_name(tail[0]) and _looks_like_place(tail[2]):
+        nombre, titulo, ubicacion = tail
+    elif len(tail) >= 2 and _looks_like_name(tail[-2]):
+        nombre, titulo = tail[-2], tail[-1]
+    else:
+        for idx in range(len(left_tail) - 1, -1, -1):
+            if _looks_like_name(left_tail[idx]):
+                nombre = left_tail[idx]
+                titulo = left_tail[idx + 1] if idx + 1 < len(left_tail) else ""
+                break
+
+    def clean(items: list[str]) -> list[str]:
+        return [item for item in items if item not in (nombre, titulo, ubicacion)]
+
+    habilidades = clean(sections.get("habilidades", []))
+    idiomas = clean(sections.get("idiomas", []))
+    resumen = " ".join(sections.get("resumen", []))
+    experiencia = _parse_pdf_experience(sections.get("experiencia", []))
+    educacion = _parse_pdf_education(sections.get("educacion", []))
+
+    contact_text = "\n".join(sections.get("contacto", []))
+    email = EMAIL_RE.search(contact_text) or EMAIL_RE.search(text)
+    linkedin = LINKEDIN_RE.search(contact_text) or LINKEDIN_RE.search(text)
+    phone = PHONE_RE.search(contact_text)
+
+    if not nombre and not experiencia:
+        raise LinkedInProfileError("El PDF no parece ser el de un perfil de LinkedIn (no encontré nombre ni experiencia).")
+
+    body = " ".join([resumen, titulo] + [f"{e['puesto']} {e['descripcion']}" for e in experiencia] + habilidades)
+    return {
+        "nombre": nombre,
+        "titulo_actual": titulo,
+        "resumen": resumen,
+        "ubicacion_actual": ubicacion,
+        "experiencia": experiencia,
+        "educacion": educacion,
+        "habilidades": _unique(habilidades + skills_mentioned(body)),
+        "idiomas": idiomas,
+        "anios_experiencia": infer_years(experiencia),
+        "contacto": {
+            "linkedin": linkedin.group(0) if linkedin else "",
+            "email": email.group(0) if email else "",
+            "telefono": phone.group(0).strip() if phone else "",
+        },
+    }
+
+
+def parse_profile_pdf(path: Path) -> dict:
+    if not path.exists():
+        raise LinkedInProfileError(f"No encontré {path}.")
+    from pypdf import PdfReader
+
+    try:
+        reader = PdfReader(str(path))
+        text = "\n".join(page.extract_text() or "" for page in reader.pages)
+    except Exception as exc:  # pypdf lanza varias excepciones propias
+        raise LinkedInProfileError(f"No pude leer {path.name}: {exc}") from exc
+    if not text.strip():
+        raise LinkedInProfileError(f"{path.name} no tiene texto extraíble (¿es una imagen escaneada?).")
+    return parse_profile_pdf_text(text)
 
 
 def parse_export_zip(path: Path) -> dict:

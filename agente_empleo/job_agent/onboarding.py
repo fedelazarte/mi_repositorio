@@ -19,7 +19,7 @@ import yaml
 from . import config
 from .cv_parser import CVError, parse_cv_file
 from .profile import ProfileError
-from .sources.linkedin_profile import LinkedInProfileError, fetch_public_profile, parse_export_zip
+from .sources.linkedin_profile import LinkedInProfileError, fetch_public_profile, parse_export
 
 InputFn = Callable[[str], str]
 
@@ -395,7 +395,7 @@ def run_onboarding(
     if linkedin_export is not None:
         output_fn(f"Leyendo exportación de LinkedIn {linkedin_export.name}...")
         try:
-            drafts.append(parse_export_zip(linkedin_export))
+            drafts.append(parse_export(linkedin_export))
         except LinkedInProfileError as exc:
             raise ProfileError(str(exc)) from exc
         fuentes["linkedin_export"] = linkedin_export.name
