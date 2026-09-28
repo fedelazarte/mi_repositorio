@@ -98,6 +98,41 @@ def test_seniority_and_modality_detection():
     assert detect_modality(make_job(remote=False)) == "presencial"
 
 
+def _with(profile, **aspiraciones):
+    import copy
+
+    from job_agent.profile import Profile
+
+    data = copy.deepcopy(profile.raw)
+    data["aspiraciones"].update(aspiraciones)
+    return Profile(data)
+
+
+def test_questionnaire_constraints_change_the_score(profile):
+    exclusive = _with(profile, remoto_excluyente=True, modalidad=["remoto"], empresas_evitar=["Acme"])
+    base = dict(title="Senior Data Scientist", location="Buenos Aires, Argentina",
+                description="Python, pandas, scikit-learn, SQL, BigQuery y Power BI.")
+    remote = make_job(id="remote", company="Otra", **{**base, "description": "100% remoto. " + base["description"]})
+    onsite = make_job(id="onsite", company="Otra", **{**base, "description": "Trabajo presencial. " + base["description"]})
+    blocked = make_job(id="blocked", company="Acme Corp", **{**base, "description": "100% remoto. " + base["description"]})
+    remote_score = score_job(remote, exclusive)
+    assert remote_score.score > score_job(onsite, exclusive).score + 25
+    assert any("excluyente" in gap for gap in score_job(onsite, exclusive).gaps)
+    assert any("empresas a evitar" in gap for gap in score_job(blocked, exclusive).gaps)
+
+    paid_little = _with(profile, salario_minimo=5000, moneda="USD")
+    cheap = make_job(id="cheap", description="Remoto. Compensación hasta USD 2,000. Python y SQL.")
+    assert any("debajo de tu mínimo" in gap for gap in score_job(cheap, paid_little).gaps)
+
+    movable = _with(profile, relocation=True, relocation_destinos=["Madrid"])
+    madrid = make_job(id="mad", location="Madrid, España", description="Esquema híbrido. Python y SQL.")
+    assert any("relocation" in reason for reason in score_job(madrid, movable).reasons)
+
+    stays = _with(profile, viaje="no")
+    traveler = make_job(id="trip", description="Disponibilidad para viajar. Python y SQL.")
+    assert any("viajar" in gap for gap in score_job(traveler, stays).gaps)
+
+
 def test_score_is_bounded(profile):
     for job in (GOOD, BAD, GAP, make_job(id="empty", title="", description="")):
         assert 0 <= score_job(job, profile, text_similarity=1.0).score <= 100
