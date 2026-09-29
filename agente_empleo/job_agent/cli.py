@@ -373,13 +373,12 @@ def cmd_cv(args) -> None:
     db.close()
     if job is None:
         sys.exit(f"No conozco la oferta {args.id}. Tiene que estar guardada: `buscar`, `importar` o `agregar`.")
-    if args.llm and not llm.available():
-        print("Aviso: no hay OPENAI_API_KEY. Armo el CV solo con tu perfil, sin reescritura.")
-    md_path, docx_path = write_cv(profile, job, use_llm=args.llm and llm.available())
-    print(f"CV para {job.title} — {job.company}")
-    print(f"  {md_path}")
-    print(f"  {docx_path}")
-    print("Usa solo datos de tu perfil. Revisalo antes de enviarlo.")
+    pdf_path, untranslated = write_cv(profile, job)
+    print(f"CV en inglés para {job.title} — {job.company}")
+    print(f"  {pdf_path}")
+    if untranslated:
+        print("Algunas frases quedaron en el idioma original porque la traducción falló.")
+    print("Usa solo datos de tu perfil. No es un archivo para editar.")
 
 
 def cmd_conocer(args) -> None:
@@ -469,9 +468,8 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--detalle", action="store_true", help="mostrar razones y brechas")
     sp.set_defaults(func=cmd_matches)
 
-    sp = sub.add_parser("cv", help="armar un CV orientado a una oferta y guardarlo en cvs/")
+    sp = sub.add_parser("cv", help="armar un CV en inglés (PDF) orientado a una oferta y guardarlo en cvs/")
     sp.add_argument("id", help="id de la oferta, el número que muestra matches")
-    sp.add_argument("--llm", action="store_true", help="reescribir la redacción con un modelo (requiere OPENAI_API_KEY)")
     sp.set_defaults(func=cmd_cv)
 
     sp = sub.add_parser("ver", help="detalle de una oferta y su historial")

@@ -1,6 +1,6 @@
-from docx import Document
+from pypdf import PdfReader
 
-from job_agent.cv_writer import render_cv, write_cv
+from job_agent.cv_writer import write_cv
 from job_agent.models import Job
 
 
@@ -15,22 +15,28 @@ def _job() -> Job:
     )
 
 
-def test_cv_highlights_job_skills_and_does_not_invent(profile):
-    text = render_cv(profile, _job())
-    assert "Senior Data Scientist — Acme" in text
-    assert "Para este puesto: " in text
-    puesto = text.split("Para este puesto: ", 1)[1].split("\n", 1)[0].lower()
-    assert "python" in puesto and "sql" in puesto
-    assert "kubernetes" not in puesto
+def _translate(texts: list[str]) -> list[str]:
+    return [f"EN {text}" for text in texts]
+
+
+def _pdf_text(path) -> str:
+    return "\n".join(page.extract_text() or "" for page in PdfReader(str(path)).pages)
+
+
+def test_cv_is_an_english_pdf_and_does_not_invent(profile, tmp_path):
+    path, failed = write_cv(profile, _job(), tmp_path, translator=_translate)
+    assert path.suffix == ".pdf"
+    assert not failed
+    assert not list(tmp_path.glob("*.md"))
+    assert not list(tmp_path.glob("*.docx"))
+    text = _pdf_text(path)
+    assert "PROFILE" in text
+    assert "SKILLS" in text
+    assert "EXPERIENCE" in text
+    assert "For this role:" in text
+    assert "Python" in text and "SQL" in text
+    assert "Kubernetes" not in text
     assert "Empresa Ejemplo S.A." in text
     assert "Inventada" not in text
-
-
-def test_write_cv_saves_markdown_and_docx(profile, tmp_path):
-    md_path, docx_path = write_cv(profile, _job(), tmp_path)
-    assert md_path.parent == tmp_path
-    assert md_path.suffix == ".md" and docx_path.suffix == ".docx"
-    assert "4471583731" in md_path.name
-    paragraphs = [p.text for p in Document(docx_path).paragraphs]
-    assert any(profile.nombre in p for p in paragraphs)
-    assert any("Acme" in p for p in paragraphs)
+    assert "Experiencia" not in text
+    assert "EN " in text
