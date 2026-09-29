@@ -32,7 +32,19 @@ def test_mail_goes_out_once_and_only_above_threshold(tmp_path, profile, monkeypa
     assert sent[0][0] == "ana@example.com"
     assert "92%" in sent[0][1]
     assert "Falta dbt" in sent[0][2]
-    assert "https://ej/high" in sent[0][2]
+    assert "Link: https://ej/high" in sent[0][2]
+
+
+def test_email_builds_linkedin_link_when_the_offer_has_no_url(profile):
+    from job_agent.notify import render_match_email
+
+    row = {
+        "id": "4471583731", "title": "Data Scientist", "company": "Acme",
+        "location": "Londres, Reino Unido", "url": "", "score": 90,
+        "reasons": "[]", "gaps": "[]", "advice": "",
+    }
+    _, body = render_match_email(_profile(profile), row)
+    assert "Link: https://www.linkedin.com/jobs/view/4471583731/" in body
 
     second = notify_high_matches(db, person, sender=sender)
     assert second.sent == []

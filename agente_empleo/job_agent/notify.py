@@ -9,6 +9,7 @@ El destinatario es `contacto.email` del perfil, o `JOB_AGENT_EMAIL_TO` si está 
 """
 from __future__ import annotations
 
+import html
 import json
 import logging
 import os
@@ -48,17 +49,29 @@ class NotifyResult:
     reason: str | None  # None si se envió (o no había nada); si no, por qué no se pudo
 
 
+def job_link(row) -> str:
+    """URL de la oferta. Si no quedó guardada, arma la de LinkedIn a partir del id numérico."""
+    url = (row["url"] or "").strip()
+    if url:
+        return url
+    job_id = str(row["id"])
+    if job_id.isdigit():
+        return f"https://www.linkedin.com/jobs/view/{job_id}/"
+    return ""
+
+
 def render_match_email(profile: Profile, row) -> tuple[str, str]:
     score = float(row["score"])
     subject = f"Match {score:.0f}% — {row['title']} en {row['company']}"
+    link = job_link(row)
     lines = [
         f"Hola {profile.nombre.split()[0] if profile.nombre else ''},".rstrip(),
         "",
         f"Encontré una oferta con match {score:.0f}/100, por encima de tu umbral de {profile.umbral_email:.0f}.",
         "",
         f"{row['title']} — {row['company']}",
+        f"Link: {link}" if link else "Link: esta oferta no tiene URL guardada",
         f"Ubicación: {row['location'] or 'sin especificar'}",
-        row["url"] or "",
         "",
         "Por qué encaja:",
     ]
@@ -85,6 +98,10 @@ def smtp_send(to: str, subject: str, body: str) -> None:
     message["From"] = cfg["from"]
     message["To"] = to
     message.set_content(body)
+    # Versión HTML para que el link sea clickeable aunque el cliente no detecte la URL.
+    html_body = "<br>\n".join(html.escape(line) for line in body.split("\n"))
+    html_body = re.sub(r"(https?://[^\s<]+)", r'<a href="\1">\1</a>', html_body)
+    message.add_alternative(f"<html><body>{html_body}</body></html>", subtype="html")
     client = smtplib.SMTP_SSL if cfg["ssl"] else smtplib.SMTP
     with client(cfg["host"], cfg["port"], timeout=30) as smtp:
         smtp.ehlo()
