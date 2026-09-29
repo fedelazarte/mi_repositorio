@@ -10,7 +10,7 @@ from datetime import date
 from pathlib import Path
 
 from . import config, llm
-from .cv_writer import write_cv
+from .cv_writer import CVError, write_cv
 from .db import Database
 from .matcher import score_job, score_jobs
 from .models import CLOSED_STATUSES, STATUSES, Job
@@ -373,12 +373,19 @@ def cmd_cv(args) -> None:
     db.close()
     if job is None:
         sys.exit(f"No conozco la oferta {args.id}. Tiene que estar guardada: `buscar`, `importar` o `agregar`.")
-    pdf_path, untranslated = write_cv(profile, job)
+    if not config.OPENAI_API_KEY:
+        sys.exit(
+            "Para armar el CV hace falta un modelo.\n"
+            "Definí OPENAI_API_KEY y, si no usás OpenAI, también JOB_AGENT_LLM_MODEL y OPENAI_BASE_URL.\n"
+            "Ejemplo: export OPENAI_API_KEY=sk-..."
+        )
+    try:
+        pdf_path = write_cv(profile, job)
+    except CVError as exc:
+        sys.exit(str(exc))
     print(f"CV en inglés para {job.title} — {job.company}")
     print(f"  {pdf_path}")
-    if untranslated:
-        print("Algunas frases quedaron en el idioma original porque la traducción falló.")
-    print("Usa solo datos de tu perfil. No es un archivo para editar.")
+    print("Está redactado para ese rol, sin salario, proyectos personales ni otras postulaciones.")
 
 
 def cmd_conocer(args) -> None:

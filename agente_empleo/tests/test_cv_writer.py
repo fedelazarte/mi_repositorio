@@ -1,6 +1,8 @@
+import json
+
 from pypdf import PdfReader
 
-from job_agent.cv_writer import write_cv
+from job_agent.cv_writer import build_messages, sanitize, source_material, write_cv
 from job_agent.models import Job
 
 
@@ -9,34 +11,74 @@ def _job() -> Job:
         id="4471583731",
         title="Senior Data Scientist",
         company="Acme",
-        location="Londres, Reino Unido",
+        location="London, United Kingdom",
         url="https://www.linkedin.com/jobs/view/4471583731/",
-        description="Buscamos Data Scientist con Python, SQL y Kubernetes. Trabajo remoto.",
+        description="We need a Data Scientist with Python and SQL. Kubernetes is a plus.",
     )
 
 
-def _translate(texts: list[str]) -> list[str]:
-    return [f"EN {text}" for text in texts]
+def _draft() -> dict:
+    return {
+        "headline": "Data Analyst",
+        "summary": "Data analyst used to turning operational data into decisions. Expected salary: 9000 USD. Also applying to other companies.",
+        "skills": ["Python", "SQL", "Kubernetes", "salary negotiation"],
+        "experience": [
+            {
+                "title": "Data Analyst",
+                "company": "Empresa Ejemplo S.A.",
+                "period": "2022 - Present",
+                "bullets": [
+                    "Built Power BI dashboards and SQL models on BigQuery.",
+                    "Asked for a higher salary during the process.",
+                ],
+            },
+            {
+                "title": "Personal project",
+                "company": "Proyecto propio",
+                "period": "2021",
+                "bullets": ["A hobby app."],
+            },
+            {
+                "title": "Invented role",
+                "company": "Inventada SA",
+                "period": "2019",
+                "bullets": ["Did something that never happened."],
+            },
+        ],
+        "education": ["B.Sc. in Statistics, UBA"],
+        "languages": ["Spanish (native)", "English (B2)"],
+    }
 
 
-def _pdf_text(path) -> str:
-    return "\n".join(page.extract_text() or "" for page in PdfReader(str(path)).pages)
+def test_the_model_does_not_receive_salary_or_other_applications(profile):
+    profile.salario_minimo = 9000
+    material = source_material(profile, _job())
+    assert "salario" not in material
+    assert "9000" not in json.dumps(material)
+    prompt = build_messages(profile, _job())[0]["content"].lower()
+    assert "salary" in prompt and "personal projects" in prompt and "other applications" in prompt
 
 
-def test_cv_is_an_english_pdf_and_does_not_invent(profile, tmp_path):
-    path, failed = write_cv(profile, _job(), tmp_path, translator=_translate)
-    assert path.suffix == ".pdf"
-    assert not failed
-    assert not list(tmp_path.glob("*.md"))
-    assert not list(tmp_path.glob("*.docx"))
-    text = _pdf_text(path)
-    assert "PROFILE" in text
-    assert "SKILLS" in text
-    assert "EXPERIENCE" in text
-    assert "For this role:" in text
-    assert "Python" in text and "SQL" in text
-    assert "Kubernetes" not in text
-    assert "Empresa Ejemplo S.A." in text
+def test_sanitize_drops_invented_and_non_cv_content(profile):
+    cleaned = sanitize(profile, _draft())
+    companies = {role["company"] for role in cleaned["experience"]}
+    assert companies == {"Empresa Ejemplo S.A."}
+    bullets = " ".join(cleaned["experience"][0]["bullets"]).lower()
+    assert "bigquery" in bullets
+    assert "salary" not in bullets
+    assert "kubernetes" not in [skill.lower() for skill in cleaned["skills"]]
+    assert "python" in [skill.lower() for skill in cleaned["skills"]]
+    assert "salary" not in cleaned["summary"].lower()
+    assert "other companies" not in cleaned["summary"].lower()
+    assert any("UBA" in item for item in cleaned["education"])
+
+
+def test_pdf_contains_the_cleaned_cv_only(profile, tmp_path):
+    path = write_cv(profile, _job(), tmp_path, generator=lambda *_: _draft())
+    text = "\n".join(page.extract_text() or "" for page in PdfReader(str(path)).pages)
+    assert "PROFILE" in text or "Profile" in text
+    assert "Empresa Ejemplo" in text
     assert "Inventada" not in text
-    assert "Experiencia" not in text
-    assert "EN " in text
+    assert "Kubernetes" not in text
+    assert "9000" not in text
+    assert "salary" not in text.lower()

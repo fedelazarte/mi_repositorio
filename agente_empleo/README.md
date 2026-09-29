@@ -95,7 +95,7 @@ python -m job_agent matches                     # solo match de 80 o más
 python -m job_agent matches --min 60             # bajar el corte para esta corrida
 python -m job_agent matches --detalle --top 5    # con razones y brechas
 python -m job_agent ver 4446531276 --descripcion # una oferta en detalle
-python -m job_agent cv 4446531276               # CV en inglés, en PDF, guardado en cvs/
+python -m job_agent cv 4446531276               # CV en inglés y en PDF (requiere OPENAI_API_KEY)
 ```
 
 Ejemplo real de salida:
