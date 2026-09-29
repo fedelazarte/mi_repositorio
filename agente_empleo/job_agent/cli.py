@@ -10,6 +10,7 @@ from datetime import date
 from pathlib import Path
 
 from . import config, llm
+from .cv_writer import write_cv
 from .db import Database
 from .matcher import score_job, score_jobs
 from .models import CLOSED_STATUSES, STATUSES, Job
@@ -365,6 +366,22 @@ def cmd_repuntuar(args) -> None:
     db.close()
 
 
+def cmd_cv(args) -> None:
+    profile = _load_profile()
+    db = _open_db()
+    job = db.get_job(args.id)
+    db.close()
+    if job is None:
+        sys.exit(f"No conozco la oferta {args.id}. Tiene que estar guardada: `buscar`, `importar` o `agregar`.")
+    if args.llm and not llm.available():
+        print("Aviso: no hay OPENAI_API_KEY. Armo el CV solo con tu perfil, sin reescritura.")
+    md_path, docx_path = write_cv(profile, job, use_llm=args.llm and llm.available())
+    print(f"CV para {job.title} — {job.company}")
+    print(f"  {md_path}")
+    print(f"  {docx_path}")
+    print("Usa solo datos de tu perfil. Revisalo antes de enviarlo.")
+
+
 def cmd_conocer(args) -> None:
     try:
         run_onboarding(
@@ -451,6 +468,11 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--empresa")
     sp.add_argument("--detalle", action="store_true", help="mostrar razones y brechas")
     sp.set_defaults(func=cmd_matches)
+
+    sp = sub.add_parser("cv", help="armar un CV orientado a una oferta y guardarlo en cvs/")
+    sp.add_argument("id", help="id de la oferta, el número que muestra matches")
+    sp.add_argument("--llm", action="store_true", help="reescribir la redacción con un modelo (requiere OPENAI_API_KEY)")
+    sp.set_defaults(func=cmd_cv)
 
     sp = sub.add_parser("ver", help="detalle de una oferta y su historial")
     sp.add_argument("id")
