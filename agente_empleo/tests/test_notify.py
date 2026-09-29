@@ -34,6 +34,10 @@ def test_mail_goes_out_once_and_only_above_threshold(tmp_path, profile, monkeypa
     assert "Falta dbt" in sent[0][2]
     assert "Link: https://ej/high" in sent[0][2]
 
+    second = notify_high_matches(db, person, sender=sender)
+    assert second.sent == []
+    assert len(sent) == 1
+
 
 def test_email_builds_linkedin_link_when_the_offer_has_no_url(profile):
     from job_agent.notify import render_match_email
@@ -45,10 +49,6 @@ def test_email_builds_linkedin_link_when_the_offer_has_no_url(profile):
     }
     _, body = render_match_email(_profile(profile), row)
     assert "Link: https://www.linkedin.com/jobs/view/4471583731/" in body
-
-    second = notify_high_matches(db, person, sender=sender)
-    assert second.sent == []
-    assert len(sent) == 1
 
 
 def test_invalid_recipient_is_not_sent(tmp_path, profile, monkeypatch):
