@@ -133,6 +133,22 @@ def test_questionnaire_constraints_change_the_score(profile):
     assert any("viajar" in gap for gap in score_job(traveler, stays).gaps)
 
 
+def test_regions_cover_cities_in_either_language(profile):
+    europe = _with(profile, ubicaciones=["European Union", "United Kingdom"], relocation=False)
+    london = make_job(id="lon", location="Londres, Reino Unido", description="Híbrido. Python y SQL.")
+    result = score_job(london, europe)
+    assert any("United Kingdom" in reason for reason in result.reasons)
+    assert not any("fuera de tus preferencias" in gap for gap in result.gaps)
+
+    only_eu = _with(profile, ubicaciones=["European Union"], relocation=False)
+    # El Reino Unido no es parte de la Unión Europea.
+    assert any("fuera de tus preferencias" in gap for gap in score_job(london, only_eu).gaps)
+    berlin = make_job(id="ber", location="Berlín, Alemania", description="Híbrido. Python y SQL.")
+    assert any("European Union" in reason for reason in score_job(berlin, only_eu).reasons)
+    belfast = make_job(id="bel", location="Belfast, Northern Ireland", description="Híbrido. Python y SQL.")
+    assert any("fuera de tus preferencias" in gap for gap in score_job(belfast, only_eu).gaps)
+
+
 def test_score_is_bounded(profile):
     for job in (GOOD, BAD, GAP, make_job(id="empty", title="", description="")):
         assert 0 <= score_job(job, profile, text_similarity=1.0).score <= 100

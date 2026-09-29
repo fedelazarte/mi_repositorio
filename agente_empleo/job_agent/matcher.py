@@ -21,6 +21,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
 from .models import Job, MatchResult
+from .places import matching_preference
 from .profile import Profile
 
 WEIGHTS = {
@@ -328,24 +329,23 @@ def score_job(job: Job, profile: Profile, text_similarity: float = 0.0) -> Match
         modality_score = 0.3
         gaps.append(f"Modalidad {job_modality} (buscás {', '.join(sorted(wanted_modalities))})")
 
-    # --- ubicación (incluye destinos de relocation y la ciudad donde vive)
-    loc_norm = normalize(job.location)
+    # --- ubicación: una ciudad cuenta como su país, y una región (UE, LATAM) como sus países
     preferred = list(profile.ubicaciones)
     if profile.ubicacion_actual:
         preferred.append(profile.ubicacion_actual)
     if profile.relocation:
         preferred.extend(profile.relocation_destinos)
     relocation_penalty = 0
-    matches_location = any(normalize(place) and normalize(place) in loc_norm for place in preferred)
-    matches_relocation = profile.relocation and any(
-        normalize(place) and normalize(place) in loc_norm for place in profile.relocation_destinos
-    )
-    if not preferred or not loc_norm:
+    matched_place = matching_preference(preferred, job.location)
+    matched_relocation = matching_preference(profile.relocation_destinos, job.location) if profile.relocation else None
+    if not preferred or not job.location:
         location_score = 0.6
-    elif job_modality == "remoto" or matches_location:
+    elif job_modality == "remoto" or matched_place:
         location_score = 1.0
-        if matches_relocation:
-            reasons.append(f"La ubicación encaja con tu disposición a relocation ({job.location})")
+        if matched_relocation:
+            reasons.append(f"La ubicación '{job.location}' entra en tu relocation ({matched_relocation})")
+        elif matched_place and job_modality != "remoto":
+            reasons.append(f"La ubicación '{job.location}' entra en '{matched_place}'")
     else:
         location_score = 0.4
         gaps.append(f"Ubicación '{job.location}' fuera de tus preferencias")
