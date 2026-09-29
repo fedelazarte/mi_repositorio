@@ -1,6 +1,6 @@
 """Aviso por mail cuando una oferta matchea de verdad (85% o más, configurable).
 
-Se manda un mail por oferta, una sola vez. Requiere SMTP en el entorno:
+Las ofertas nuevas que superan el umbral salen juntas en un solo mail, una sola vez. Requiere SMTP en el entorno:
 
     JOB_AGENT_SMTP_HOST, JOB_AGENT_SMTP_PORT (587), JOB_AGENT_SMTP_USER,
     JOB_AGENT_SMTP_PASSWORD, JOB_AGENT_SMTP_FROM (opcional)
@@ -60,33 +60,45 @@ def job_link(row) -> str:
     return ""
 
 
-def render_match_email(profile: Profile, row) -> tuple[str, str]:
+def _offer_lines(row) -> list[str]:
     score = float(row["score"])
-    subject = f"Match {score:.0f}% — {row['title']} en {row['company']}"
     link = job_link(row)
     lines = [
-        f"Hola {profile.nombre.split()[0] if profile.nombre else ''},".rstrip(),
-        "",
-        f"Encontré una oferta con match {score:.0f}/100, por encima de tu umbral de {profile.umbral_email:.0f}.",
-        "",
-        f"{row['title']} — {row['company']}",
+        f"{score:.0f}%  {row['title']} — {row['company']}",
         f"Link: {link}" if link else "Link: esta oferta no tiene URL guardada",
         f"Ubicación: {row['location'] or 'sin especificar'}",
-        "",
         "Por qué encaja:",
     ]
     for reason in json.loads(row["reasons"] or "[]"):
         lines.append(f"  + {reason}")
     gaps = json.loads(row["gaps"] or "[]")
     if gaps:
-        lines.append("")
-        lines.append("A tener en cuenta:")
-        for gap in gaps:
-            lines.append(f"  - {gap}")
+        lines.extend(["", "A tener en cuenta:"])
+        lines.extend(f"  - {gap}" for gap in gaps)
     if row["advice"]:
         lines.extend(["", f"Consejo: {row['advice']}"])
-    lines.extend(["", "Cuando te postules: `python -m job_agent postular " + row["id"] + "`", ""])
-    return subject, "\n".join(line for line in lines if line is not None)
+    lines.append(f"Postular: python -m job_agent postular {row['id']}")
+    return lines
+
+
+def render_match_email(profile: Profile, rows) -> tuple[str, str]:
+    """Un solo mail con todas las ofertas de la corrida. `rows` puede ser una fila o una lista."""
+    if isinstance(rows, dict) or not isinstance(rows, (list, tuple)):
+        rows = [rows]
+    else:
+        rows = list(rows)
+    threshold = profile.umbral_email
+    if len(rows) == 1:
+        row = rows[0]
+        subject = f"Match {float(row['score']):.0f}% — {row['title']} en {row['company']}"
+        intro = f"Encontré una oferta con match {float(row['score']):.0f}/100, por encima de tu umbral de {threshold:.0f}."
+    else:
+        subject = f"{len(rows)} ofertas con match de {threshold:.0f}% o más"
+        intro = f"Encontré {len(rows)} ofertas con match de {threshold:.0f}% o más."
+    greeting = f"Hola {profile.nombre.split()[0] if profile.nombre else ''},".rstrip()
+    blocks = ["\n".join(_offer_lines(row)) for row in rows]
+    body = "\n\n".join([greeting, intro, *blocks, ""])
+    return subject, body
 
 
 def smtp_send(to: str, subject: str, body: str) -> None:
@@ -113,7 +125,7 @@ def smtp_send(to: str, subject: str, body: str) -> None:
 
 
 def notify_high_matches(db: Database, profile: Profile, sender=None) -> NotifyResult:
-    """Manda mail por cada oferta nueva que supera el umbral. No repite avisos ya enviados."""
+    """Manda un solo mail con todas las ofertas nuevas que superan el umbral. No repite avisos ya enviados."""
     if not profile.email_activo:
         return NotifyResult([], [], "", "desactivado")
     pending = db.high_matches_not_notified(profile.umbral_email)
@@ -128,28 +140,18 @@ def notify_high_matches(db: Database, profile: Profile, sender=None) -> NotifyRe
         if config.smtp_settings() is None:
             return NotifyResult([], pending, to, "sin_smtp")
         sender = smtp_send
-    sent: list[str] = []
-    still_pending = []
-    reason = None
-    for index, row in enumerate(pending):
-        subject, body = render_match_email(profile, row)
-        try:
-            sender(to, subject, body)
-        except smtplib.SMTPAuthenticationError as exc:
-            # Si el usuario/contraseña están mal, seguir intentando solo suma rechazos.
-            log.warning("El servidor rechazó las credenciales: %s", exc)
-            still_pending.extend(pending[index:])
-            reason = "credenciales"
-            break
-        except Exception as exc:  # un fallo de SMTP no tiene que abortar la búsqueda
-            log.warning("No pude avisar por %s (%s): %s", row["id"], to, exc)
-            still_pending.append(row)
-            continue
+    subject, body = render_match_email(profile, pending)
+    try:
+        sender(to, subject, body)
+    except smtplib.SMTPAuthenticationError as exc:
+        log.warning("El servidor rechazó las credenciales: %s", exc)
+        return NotifyResult([], pending, to, "credenciales")
+    except Exception as exc:  # un fallo de SMTP no tiene que abortar la búsqueda
+        log.warning("No pude avisar de %d oferta(s) a %s: %s", len(pending), to, exc)
+        return NotifyResult([], pending, to, "error_smtp")
+    for row in pending:
         db.mark_notified(row["id"], float(row["score"]), to)
-        sent.append(row["id"])
-    if still_pending and reason is None:
-        reason = "error_smtp"
-    return NotifyResult(sent, still_pending, to, reason)
+    return NotifyResult([row["id"] for row in pending], [], to, None)
 
 
 def send_test_email(profile: Profile) -> str:

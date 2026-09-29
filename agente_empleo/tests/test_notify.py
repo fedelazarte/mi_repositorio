@@ -39,6 +39,21 @@ def test_mail_goes_out_once_and_only_above_threshold(tmp_path, profile, monkeypa
     assert len(sent) == 1
 
 
+def test_several_high_matches_go_in_one_email(tmp_path, profile):
+    db = Database(tmp_path / "t.db")
+    _seed(db)
+    db.upsert_job(Job(id="high2", title="Analytics Engineer", company="Beta", location="Londres", url="https://ej/high2"))
+    db.upsert_match(MatchResult(job_id="high2", score=95, reasons=["Encaja"], gaps=[]))
+    sent = []
+    result = notify_high_matches(db, _profile(profile), sender=lambda *args: sent.append(args))
+    assert len(sent) == 1
+    assert set(result.sent) == {"high", "high2"}
+    assert "2 ofertas" in sent[0][1]
+    assert "https://ej/high" in sent[0][2]
+    assert "https://ej/high2" in sent[0][2]
+    assert "70" not in sent[0][2]
+
+
 def test_email_builds_linkedin_link_when_the_offer_has_no_url(profile):
     from job_agent.notify import render_match_email
 
