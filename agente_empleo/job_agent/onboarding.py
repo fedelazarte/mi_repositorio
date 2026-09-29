@@ -312,7 +312,7 @@ def apply_preferences(data: dict, prompter: Prompter) -> dict:
     data.setdefault("seguimiento", {})
     data["seguimiento"].setdefault("dias_sin_respuesta_para_avisar", 10)
     data["seguimiento"].setdefault("dias_para_marcar_sin_respuesta", 30)
-    data["seguimiento"].setdefault("puntaje_minimo_para_recomendar", 65)
+    data["seguimiento"].setdefault("puntaje_minimo_para_recomendar", 80)
     busqueda = data.setdefault("busqueda", {})
     if not busqueda.get("consultas"):
         busqueda["consultas"] = _suggest_queries(data)

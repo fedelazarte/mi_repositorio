@@ -21,6 +21,9 @@ from .tracker import auto_expire, funnel_stats, pending_follow_ups
 
 log = logging.getLogger("job_agent")
 
+# Por debajo de esto el listado es ruido. --min lo baja o lo sube para una corrida.
+MIN_MATCH_MOSTRADO = 80
+
 
 # ------------------------------------------------------------------ helpers --
 def _short(text: str | None, width: int) -> str:
@@ -34,6 +37,12 @@ def _print_table(headers: list[str], rows: list[list[str]], widths: list[int]) -
     print("  ".join("-" * w for w in widths))
     for row in rows:
         print(fmt.format(*[_short(str(c), w) for c, w in zip(row, widths)]))
+
+
+def _min_a_mostrar(profile: Profile, explicito: float | None) -> float:
+    if explicito is not None:
+        return explicito
+    return max(MIN_MATCH_MOSTRADO, profile.puntaje_minimo)
 
 
 def _load_profile() -> Profile:
@@ -158,11 +167,12 @@ def cmd_buscar(args) -> None:
     fresh = [j for j in fresh if j is not None]
     _score_and_store(db, fresh, profile, args.llm)
 
-    print(f"\nMejores matches (>= {profile.puntaje_minimo:.0f}) todavía sin postular:")
+    minimo = _min_a_mostrar(profile, args.min)
+    print(f"\nMejores matches (>= {minimo:.0f}) todavía sin postular:")
     open_statuses = [s for s in STATUSES if s not in CLOSED_STATUSES and s not in ("postulado", "en_revision", "entrevista")]
-    rows = db.list_matches(min_score=profile.puntaje_minimo, statuses=open_statuses, limit=args.top)
+    rows = db.list_matches(min_score=minimo, statuses=open_statuses, limit=args.top)
     if not rows:
-        print("  (ninguna por ahora; probá `matches --min 50` para ver más)")
+        print(f"  (ninguna con {minimo:.0f} o más; `matches --min 60` muestra el resto)")
     for row in rows:
         _print_match_row(row)
     _notify(db, profile, not args.sin_mail)
@@ -204,9 +214,11 @@ def cmd_agregar(args) -> None:
 
 
 def cmd_matches(args) -> None:
+    profile = _load_profile()
     db = _open_db()
+    minimo = _min_a_mostrar(profile, args.min)
     statuses = [args.estado] if args.estado else None
-    rows = db.list_matches(min_score=args.min, statuses=statuses, limit=args.top, company=args.empresa)
+    rows = db.list_matches(min_score=minimo, statuses=statuses, limit=args.top, company=args.empresa)
     if not rows:
         print("No hay matches con esos filtros. Ejecutá `buscar` primero o bajá `--min`.")
     if args.detalle:
@@ -391,6 +403,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--remoto", action="store_true")
     sp.add_argument("--limite", type=int, help="máximo de resultados por consulta")
     sp.add_argument("--top", type=int, default=10, help="cuántos matches mostrar")
+    sp.add_argument("--min", type=float, default=None, help="puntaje mínimo a mostrar (80 si no se indica)")
     sp.add_argument("--sin-detalle", action="store_true", help="no descargar descripciones (más rápido, peor matching)")
     sp.add_argument("--llm", action="store_true", help="refinar con LLM (requiere OPENAI_API_KEY)")
     sp.add_argument("--sin-mail", action="store_true", help="no avisar por mail aunque el match supere el umbral")
@@ -414,7 +427,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp.set_defaults(func=cmd_agregar)
 
     sp = sub.add_parser("matches", help="listar ofertas ordenadas por match")
-    sp.add_argument("--min", type=float, default=0)
+    sp.add_argument("--min", type=float, default=None, help="puntaje mínimo a mostrar (80 si no se indica)")
     sp.add_argument("--top", type=int, default=30)
     sp.add_argument("--estado", choices=STATUSES)
     sp.add_argument("--empresa")

@@ -91,7 +91,8 @@ python -m job_agent perfil ver       # resumen de lo que entendió el agente
 ```bash
 python -m job_agent buscar                       # corre todas las consultas del perfil
 python -m job_agent buscar --keywords "Analytics Engineer" --location Argentina --remoto
-python -m job_agent matches --min 60             # tabla ordenada por match
+python -m job_agent matches                     # solo match de 80 o más
+python -m job_agent matches --min 60             # bajar el corte para esta corrida
 python -m job_agent matches --detalle --top 5    # con razones y brechas
 python -m job_agent ver 4446531276 --descripcion # una oferta en detalle
 ```

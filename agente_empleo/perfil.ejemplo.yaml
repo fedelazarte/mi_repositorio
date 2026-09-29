@@ -99,7 +99,7 @@ busqueda:
 seguimiento:
   dias_sin_respuesta_para_avisar: 10   # sugerir mensaje de follow-up al reclutador
   dias_para_marcar_sin_respuesta: 30   # con `seguimiento --auto` se marcan como "sin_respuesta"
-  puntaje_minimo_para_recomendar: 65
+  puntaje_minimo_para_recomendar: 80
 
 # Mail solo cuando el match es realmente alto.
 notificaciones:

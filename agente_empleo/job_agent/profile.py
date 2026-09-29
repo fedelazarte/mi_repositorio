@@ -69,7 +69,7 @@ class Profile:
 
         self.dias_aviso_followup: int = int(seg.get("dias_sin_respuesta_para_avisar") or 10)
         self.dias_sin_respuesta: int = int(seg.get("dias_para_marcar_sin_respuesta") or 30)
-        self.puntaje_minimo: float = float(seg.get("puntaje_minimo_para_recomendar") or 65)
+        self.puntaje_minimo: float = float(seg.get("puntaje_minimo_para_recomendar") or 80)
         notif = data.get("notificaciones") or {}
         self.email_activo: bool = bool(notif.get("email", True))
         self.umbral_email: float = float(notif.get("umbral_match", 85))
