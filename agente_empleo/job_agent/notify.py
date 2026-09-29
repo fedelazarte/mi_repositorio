@@ -94,15 +94,38 @@ def notify_high_matches(db: Database, profile: Profile, sender=None) -> NotifyRe
         sender = smtp_send
     sent: list[str] = []
     still_pending = []
-    for row in pending:
+    reason = None
+    for index, row in enumerate(pending):
         subject, body = render_match_email(profile, row)
         try:
             sender(to, subject, body)
+        except smtplib.SMTPAuthenticationError as exc:
+            # Si el usuario/contraseña están mal, seguir intentando solo suma rechazos.
+            log.warning("El servidor rechazó las credenciales: %s", exc)
+            still_pending.extend(pending[index:])
+            reason = "credenciales"
+            break
         except Exception as exc:  # un fallo de SMTP no tiene que abortar la búsqueda
             log.warning("No pude avisar por %s (%s): %s", row["id"], to, exc)
             still_pending.append(row)
             continue
         db.mark_notified(row["id"], float(row["score"]), to)
         sent.append(row["id"])
-    reason = "error_smtp" if still_pending else None
+    if still_pending and reason is None:
+        reason = "error_smtp"
     return NotifyResult(sent, still_pending, to, reason)
+
+
+def send_test_email(profile: Profile) -> str:
+    """Manda un mail de prueba y devuelve el destinatario. Lanza la excepción de SMTP si falla."""
+    to = os.environ.get("JOB_AGENT_EMAIL_TO") or profile.email
+    if not to:
+        raise RuntimeError("El perfil no tiene contacto.email y no está definido JOB_AGENT_EMAIL_TO.")
+    if config.smtp_settings() is None:
+        raise RuntimeError("Faltan JOB_AGENT_SMTP_HOST, JOB_AGENT_SMTP_USER o JOB_AGENT_SMTP_PASSWORD.")
+    smtp_send(
+        to,
+        "Prueba del agente de empleo",
+        "Si estás leyendo esto, el agente ya puede avisarte cuando aparezca una oferta con match alto.\n",
+    )
+    return to

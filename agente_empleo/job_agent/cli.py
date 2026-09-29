@@ -15,7 +15,7 @@ from .matcher import score_job, score_jobs
 from .models import CLOSED_STATUSES, STATUSES, Job
 from .profile import Profile, ProfileError
 from .sources.linkedin import LinkedInError, LinkedInGuestSource
-from .notify import notify_high_matches
+from .notify import notify_high_matches, send_test_email
 from .onboarding import run_onboarding
 from .tracker import auto_expire, funnel_stats, pending_follow_ups
 
@@ -85,6 +85,10 @@ def _notify(db: Database, profile: Profile, enabled: bool) -> None:
         cuantas = "1 oferta" if len(result.pending) == 1 else f"{len(result.pending)} ofertas"
         print(f"\nHay {cuantas} con match ≥ {profile.umbral_email:.0f} y el perfil no tiene contacto.email.")
         print("Agregalo con `conocer` o en perfil.yaml.")
+    elif result.reason == "credenciales":
+        print("\nEl servidor de mail rechazó el usuario o la contraseña. Nada se marcó como enviado.")
+        print("Si es Gmail: usá una clave de aplicación (16 letras), sin espacios o entre comillas,")
+        print("y JOB_AGENT_SMTP_USER tiene que ser la dirección completa. Probá con `notificar --prueba`.")
     elif result.reason == "error_smtp":
         print(f"\nNo pude enviar {len(result.pending)} aviso(s). Revisá la config SMTP (-v para el detalle).")
 
@@ -373,6 +377,16 @@ def cmd_conocer(args) -> None:
 
 def cmd_notificar(args) -> None:
     profile = _load_profile()
+    if args.prueba:
+        cfg = config.smtp_settings()
+        if cfg:
+            print(f"Servidor {cfg['host']}:{cfg['port']}  usuario {cfg['user']}  contraseña de {len(cfg['password'])} caracteres")
+        try:
+            to = send_test_email(profile)
+        except Exception as exc:
+            sys.exit(f"No pude mandar el mail de prueba: {exc}")
+        print(f"Mail de prueba enviado a {to}. Revisá la bandeja (y spam).")
+        return
     db = _open_db()
     _notify(db, profile, enabled=True)
     db.close()
@@ -478,6 +492,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp.set_defaults(func=cmd_repuntuar)
 
     sp = sub.add_parser("notificar", help="enviar los mails de matches altos que todavía no se avisaron")
+    sp.add_argument("--prueba", action="store_true", help="mandar un mail de prueba para verificar la configuración")
     sp.set_defaults(func=cmd_notificar)
     return p
 

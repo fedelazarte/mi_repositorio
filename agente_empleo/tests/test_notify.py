@@ -39,6 +39,26 @@ def test_mail_goes_out_once_and_only_above_threshold(tmp_path, profile, monkeypa
     assert len(sent) == 1
 
 
+def test_bad_credentials_stop_after_first_attempt(tmp_path, profile):
+    import smtplib
+
+    db = Database(tmp_path / "t.db")
+    _seed(db)
+    db.upsert_job(Job(id="high2", title="Data Scientist", company="Beta", location="Remoto", url="https://ej/high2"))
+    db.upsert_match(MatchResult(job_id="high2", score=95))
+    attempts = []
+
+    def sender(to, subject, body):
+        attempts.append(subject)
+        raise smtplib.SMTPAuthenticationError(535, b"Username and Password not accepted")
+
+    result = notify_high_matches(db, _profile(profile), sender=sender)
+    assert result.reason == "credenciales"
+    assert len(attempts) == 1
+    assert len(result.pending) == 2
+    assert result.sent == []
+
+
 def test_without_smtp_it_reports_pending_and_does_not_crash(tmp_path, profile, monkeypatch):
     monkeypatch.delenv("JOB_AGENT_SMTP_HOST", raising=False)
     db = Database(tmp_path / "t.db")
