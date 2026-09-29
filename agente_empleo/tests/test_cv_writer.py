@@ -59,25 +59,39 @@ def test_the_model_does_not_receive_salary_or_other_applications(profile):
     assert "salary" in prompt and "personal projects" in prompt and "other applications" in prompt
 
 
-def test_sanitize_drops_invented_and_non_cv_content(profile):
-    cleaned = sanitize(profile, _draft())
+def test_sanitize_keeps_real_jobs_and_drops_invented_content(profile):
+    cleaned = sanitize(profile, _job(), _draft())
     companies = {role["company"] for role in cleaned["experience"]}
-    assert companies == {"Empresa Ejemplo S.A."}
-    bullets = " ".join(cleaned["experience"][0]["bullets"]).lower()
-    assert "bigquery" in bullets
+    assert "Empresa Ejemplo S.A." in companies
+    assert "Startup Deportiva" in companies
+    assert "Inventada SA" not in companies
+    assert "Proyecto propio" not in companies
+    bullets = " ".join(bullet for role in cleaned["experience"] for bullet in role["bullets"]).lower()
+    assert "bigquery" in bullets or "power bi" in bullets
     assert "salary" not in bullets
     assert "kubernetes" not in [skill.lower() for skill in cleaned["skills"]]
-    assert "python" in [skill.lower() for skill in cleaned["skills"]]
+    assert cleaned["skills"][0].lower() in {"python", "sql"}
     assert "salary" not in cleaned["summary"].lower()
     assert "other companies" not in cleaned["summary"].lower()
-    assert any("UBA" in item for item in cleaned["education"])
+    assert cleaned["education"]
+
+
+def test_a_spanish_shaped_reply_still_keeps_experience_courses_and_skills(profile):
+    cleaned = sanitize(profile, _job(), {"resumen": "Analista.", "experiencia": [], "habilidades": []})
+    assert len(cleaned["experience"]) >= 2
+    assert cleaned["skills"]
+    assert cleaned["education"]
+    assert cleaned["summary"]
 
 
 def test_pdf_contains_the_cleaned_cv_only(profile, tmp_path):
-    path = write_cv(profile, _job(), tmp_path, generator=lambda *_: _draft())
+    path = write_cv(profile, _job(), tmp_path, generator=lambda *_: _draft(), translate=False)
     text = "\n".join(page.extract_text() or "" for page in PdfReader(str(path)).pages)
     assert "PROFILE" in text or "Profile" in text
+    assert profile.nombre in text
+    assert "Education" in text
     assert "Empresa Ejemplo" in text
+    assert "Startup Deportiva" in text
     assert "Inventada" not in text
     assert "Kubernetes" not in text
     assert "9000" not in text

@@ -11,7 +11,7 @@ from pathlib import Path
 
 from . import config
 from .llm import LocalModelError, complete_json
-from .matcher import canon, normalize
+from .matcher import canon, extract_required_skills, normalize
 from .models import Job
 from .profile import Profile
 
@@ -79,16 +79,14 @@ def build_messages(profile: Profile, job: Job) -> list[dict]:
         '{"headline": "", "summary": "", "skills": [""], '
         '"experience": [{"title": "", "company": "", "period": "", "bullets": [""]}], '
         '"education": [""], "languages": [""]}. '
-        "Rules: use only facts present in the candidate material. Never invent employers, dates, tools, degrees, or metrics. "
-        "Keep company names exactly as written. "
-        "Include only real employment. Omit personal projects, side projects, hobbies, and student exercises. "
-        "Never mention salary, compensation, other applications, interviews, or the fact that the person is job hunting. "
-        "Do not mention relocation, notice period, or visas. "
-        "Tailor the wording to the target role: keep what overlaps, drop what does not help this application. "
-        "At most four bullets per role, each one a concrete responsibility or result already supported by the source. "
-        "The summary is three or four lines, without 'I' and without phrases like 'for this role'. "
-        "Skills: between 8 and 14 items the candidate actually has, ordered by relevance to the target role. "
-        "Do not add a skill just because the job description asks for it."
+        "Write every string in English, even if the source is Spanish. "
+        "Use only facts from the candidate. Never invent employers, dates, tools, degrees, or metrics. "
+        "Keep every real job and every course: do not drop roles. Keep company names unchanged. "
+        "Omit personal projects, salary, other applications, interviews, and the job search itself. "
+        "The summary is four or five lines about who the person is, aimed at the target role. "
+        "Each job has three or four bullets taken from that job's description, leading with what overlaps the target role. "
+        "Skills: only tools the candidate has, ordered with the ones this role asks for first. "
+        "Education includes degrees and courses from the source."
     )
     user = "CANDIDATE AND TARGET ROLE:\n" + json.dumps(source_material(profile, job), ensure_ascii=False)
     return [{"role": "system", "content": system}, {"role": "user", "content": user}]
@@ -120,47 +118,107 @@ def _clean_sentence(text: str) -> str:
     return " ".join(kept)
 
 
-def sanitize(profile: Profile, draft: dict) -> dict:
-    """Tira lo que el modelo no tenía derecho a poner."""
+def _field(data: dict, *keys):
+    for key in keys:
+        value = data.get(key)
+        if value:
+            return value
+    return None
+
+
+def _role_records(draft: dict) -> list[dict]:
+    raw = _field(draft, "experience", "experiencia", "jobs") or []
+    if isinstance(raw, dict):
+        raw = [raw]
+    records = []
+    for role in raw:
+        if not isinstance(role, dict):
+            continue
+        bullets = _field(role, "bullets", "logros", "responsabilidades", "description", "descripcion") or []
+        if isinstance(bullets, str):
+            bullets = [bullets]
+        records.append({
+            "title": str(_field(role, "title", "puesto", "cargo") or ""),
+            "company": str(_field(role, "company", "empresa") or ""),
+            "period": str(_field(role, "period", "periodo", "fechas") or ""),
+            "bullets": [str(item) for item in bullets],
+        })
+    return records
+
+
+def _bullets_from_description(text: str) -> list[str]:
+    parts = re.split(r"[\n•;]+|(?<=[.])\s+", text or "")
+    return [part.strip(" -") for part in parts if len(part.strip(" -")) > 25][:4]
+
+
+def _ordered_skills(profile: Profile, job: Job, known: str, drafted: list[str]) -> list[str]:
+    required = extract_required_skills(normalize(job.full_text), profile)
+    first = [skill for skill in profile.habilidades if canon(skill) in required]
+    rest = [skill for skill in profile.habilidades if skill not in first]
+    ordered = first + rest
+    for skill in drafted:
+        label = str(skill).strip()
+        if label and _allowed_skill(label, known) and label not in ordered:
+            ordered.append(label)
+    return ordered[:16]
+
+
+def sanitize(profile: Profile, job: Job, draft: dict) -> dict:
+    """Completa con el perfil real y tira empresas, sueldos o herramientas inventadas."""
     known = _known_text(profile)
-    companies = [role.get("empresa") or "" for role in profile.experiencia]
+    model_roles = _role_records(draft)
     experience = []
-    for role in draft.get("experience") or []:
-        company = str(role.get("company") or "")
-        if not any(_same_company(company, known_company) for known_company in companies):
+    for source in profile.experiencia:
+        company = source.get("empresa") or ""
+        title = source.get("puesto") or ""
+        if _PERSONAL.search(company) or _PERSONAL.search(title):
             continue
-        if _PERSONAL.search(str(role.get("title") or "")):
-            continue
+        match = next((role for role in model_roles if _same_company(role["company"], company)), None)
         bullets = []
-        for bullet in role.get("bullets") or []:
-            cleaned = _clean_sentence(str(bullet))
-            if cleaned:
-                bullets.append(cleaned)
-        if not bullets and not role.get("title"):
-            continue
+        if match:
+            bullets = [cleaned for item in match["bullets"] if (cleaned := _clean_sentence(item))]
+            title = _clean_sentence(match["title"]) or title
+        if not bullets:
+            bullets = _bullets_from_description(source.get("descripcion") or "")
         experience.append({
-            "title": _clean_sentence(str(role.get("title") or "")) or str(role.get("title") or ""),
+            "title": title,
             "company": company,
-            "period": str(role.get("period") or ""),
+            "period": (match or {}).get("period") or source.get("periodo") or "",
             "bullets": bullets[:4],
         })
-    skills = []
-    for skill in draft.get("skills") or []:
-        label = str(skill).strip()
-        if label and _allowed_skill(label, known) and label not in skills:
-            skills.append(label)
+
     education = []
-    for item in draft.get("education") or []:
+    drafted_education = _field(draft, "education", "educacion", "cursos", "courses") or []
+    if isinstance(drafted_education, str):
+        drafted_education = [drafted_education]
+    tokens = _education_tokens(profile)
+    for item in drafted_education:
         text = _clean_sentence(str(item))
-        if text and any(token and token in normalize(text) for token in _education_tokens(profile)):
+        if text and any(token and token in normalize(text) for token in tokens):
             education.append(text)
+    if not education:
+        education = [str(item) for item in (profile.raw.get("educacion") or []) if str(item).strip()]
+
+    summary = _clean_sentence(str(_field(draft, "summary", "resumen", "profile", "perfil") or ""))
+    if len(summary) < 160:
+        extra = _clean_sentence(profile.resumen)
+        summary = f"{summary} {extra}".strip() if extra and extra not in summary else summary
+
+    drafted_skills = _field(draft, "skills", "habilidades", "conocimientos") or []
+    if isinstance(drafted_skills, str):
+        drafted_skills = [part.strip() for part in drafted_skills.split(",")]
+    languages = _field(draft, "languages", "idiomas") or profile.idiomas
+    if isinstance(languages, str):
+        languages = [languages]
+    headline = _clean_sentence(str(_field(draft, "headline", "titular") or "")) or profile.titulo_actual
     return {
-        "headline": _clean_sentence(str(draft.get("headline") or "")) or profile.titulo_actual,
-        "summary": _clean_sentence(str(draft.get("summary") or "")),
-        "skills": skills[:14],
+        "headline": headline,
+        "summary": summary,
+        "skills": _ordered_skills(profile, job, known, drafted_skills),
+        "learning": [skill for skill in profile.aprendiendo if canon(skill) in extract_required_skills(normalize(job.full_text), profile)],
         "experience": experience,
         "education": education,
-        "languages": [str(item).strip() for item in (draft.get("languages") or []) if str(item).strip()][:6],
+        "languages": [str(item).strip() for item in languages if str(item).strip()][:6],
     }
 
 
@@ -170,6 +228,39 @@ def _education_tokens(profile: Profile) -> list[str]:
         tokens.extend(token for token in re.findall(r"[a-z0-9]{5,}", normalize(str(item))))
         tokens.extend(token.lower() for token in re.findall(r"\b[A-Z]{2,}\b", str(item)))
     return tokens
+
+
+def _is_spanish(cv: dict) -> bool:
+    sample = " ".join([
+        cv.get("summary") or "",
+        " ".join(bullet for role in cv.get("experience") or [] for bullet in role.get("bullets") or []),
+    ])
+    markers = _SPANISH.findall(sample) if (_SPANISH := re.compile(
+        r"[áéíóúñ]|(\b(de|del|con|para|años|experiencia|sobre|entre|desde|hacia)\b)", re.I
+    )) else []
+    return len(markers) >= 3
+
+
+def translate_to_english(cv: dict) -> dict:
+    """Segundo paso, corto, para cuando el modelo local contestó en español."""
+    try:
+        translated = complete_json(
+            [
+                {"role": "system", "content": (
+                    "Translate this CV JSON to English. Keep every job, course, skill, date, and company name. "
+                    "Do not add or remove entries. Return the same JSON shape: "
+                    '{"headline","summary","skills","learning","experience":[{"title","company","period","bullets"}],"education","languages"}.'
+                )},
+                {"role": "user", "content": json.dumps(cv, ensure_ascii=False)},
+            ],
+            timeout=180,
+        )
+    except LocalModelError:
+        return cv
+    if not isinstance(translated, dict):
+        return cv
+    translated.setdefault("learning", cv.get("learning") or [])
+    return translated
 
 
 def generate_with_llm(profile: Profile, job: Job) -> dict:
@@ -228,6 +319,8 @@ def write_pdf(path: Path, profile: Profile, cv: dict) -> None:
     if cv.get("skills"):
         section("Skills")
         text(", ".join(cv["skills"]), 10.5, height=5.2)
+        if cv.get("learning"):
+            text("Currently learning: " + ", ".join(cv["learning"]), 10.5, height=5.2)
 
     if cv.get("experience"):
         section("Experience")
@@ -254,7 +347,7 @@ def write_pdf(path: Path, profile: Profile, cv: dict) -> None:
             pdf.ln(1.5)
 
     if cv.get("education"):
-        section("Education")
+        section("Education and courses")
         for item in cv["education"]:
             text(item, 10.5, height=5.2)
 
@@ -265,13 +358,15 @@ def write_pdf(path: Path, profile: Profile, cv: dict) -> None:
     pdf.output(str(path))
 
 
-def write_cv(profile: Profile, job: Job, directory: Path | None = None, *, generator=None) -> Path:
+def write_cv(profile: Profile, job: Job, directory: Path | None = None, *, generator=None, translate: bool = True) -> Path:
     folder = directory or CVS_DIR
     folder.mkdir(parents=True, exist_ok=True)
     draft = (generator or generate_with_llm)(profile, job)
-    cv = sanitize(profile, draft)
-    if not cv["summary"] and not cv["experience"]:
-        raise CVError("El modelo no dejó contenido usable. Probá de nuevo; no guardé el PDF.")
+    cv = sanitize(profile, job, draft)
+    if translate and _is_spanish(cv):
+        cv = sanitize(profile, job, translate_to_english(cv))
+    if not cv["experience"]:
+        raise CVError("El perfil no tiene experiencia laboral para armar el CV.")
     path = folder / f"{job.id}-{_slug(job.title)}-{_slug(job.company)}.pdf"
     write_pdf(path, profile, cv)
     return path
