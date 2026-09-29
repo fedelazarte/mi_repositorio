@@ -5,8 +5,7 @@ cv.*
 *.db
 *.db-journal
 exportaciones/
-cvs/*
-!cvs/.gitkeep
+cvs/
 
 __pycache__/
 *.pyc

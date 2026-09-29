@@ -10,7 +10,6 @@ from datetime import date
 from pathlib import Path
 
 from . import config, llm
-from .cv_writer import CVError, write_cv
 from .db import Database
 from .matcher import score_job, score_jobs
 from .models import CLOSED_STATUSES, STATUSES, Job
@@ -363,22 +362,6 @@ def cmd_repuntuar(args) -> None:
     db.close()
 
 
-def cmd_cv(args) -> None:
-    profile = _load_profile()
-    db = _open_db()
-    job = db.get_job(args.id)
-    db.close()
-    if job is None:
-        sys.exit(f"No conozco la oferta {args.id}. Tiene que estar guardada: `buscar`, `importar` o `agregar`.")
-    try:
-        pdf_path = write_cv(profile, job)
-    except CVError as exc:
-        sys.exit(str(exc))
-    print(f"CV en inglés para {job.title} — {job.company}")
-    print(f"  {pdf_path}")
-    print("Está redactado para ese rol, sin salario, proyectos personales ni otras postulaciones.")
-
-
 def cmd_conocer(args) -> None:
     try:
         run_onboarding(
@@ -465,10 +448,6 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--empresa")
     sp.add_argument("--detalle", action="store_true", help="mostrar razones y brechas")
     sp.set_defaults(func=cmd_matches)
-
-    sp = sub.add_parser("cv", help="armar un CV en inglés (PDF) orientado a una oferta y guardarlo en cvs/")
-    sp.add_argument("id", help="id de la oferta, el número que muestra matches")
-    sp.set_defaults(func=cmd_cv)
 
     sp = sub.add_parser("ver", help="detalle de una oferta y su historial")
     sp.add_argument("id")
