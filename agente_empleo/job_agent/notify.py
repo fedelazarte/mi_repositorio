@@ -12,11 +12,28 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import smtplib
 from dataclasses import dataclass
 from email.message import EmailMessage
 
 log = logging.getLogger(__name__)
+
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def recipient(profile: Profile) -> str:
+    """Destinatario: JOB_AGENT_EMAIL_TO si existe, si no el mail del perfil. Tiene que ser una sola dirección."""
+    to = (os.environ.get("JOB_AGENT_EMAIL_TO") or profile.email or "").strip()
+    if not to:
+        raise RuntimeError("El perfil no tiene contacto.email y no está definido JOB_AGENT_EMAIL_TO.")
+    if not _EMAIL_RE.match(to):
+        source = "JOB_AGENT_EMAIL_TO" if os.environ.get("JOB_AGENT_EMAIL_TO") else "contacto.email en perfil.yaml"
+        raise RuntimeError(
+            f"El destinatario no es un mail válido ({to!r}, viene de {source}). "
+            "Tiene que ser una sola dirección, sin espacios ni texto alrededor."
+        )
+    return to
 
 from . import config
 from .db import Database
@@ -80,14 +97,16 @@ def smtp_send(to: str, subject: str, body: str) -> None:
 
 def notify_high_matches(db: Database, profile: Profile, sender=None) -> NotifyResult:
     """Manda mail por cada oferta nueva que supera el umbral. No repite avisos ya enviados."""
-    pending = db.high_matches_not_notified(profile.umbral_email) if profile.email_activo else []
-    to = os.environ.get("JOB_AGENT_EMAIL_TO") or profile.email
     if not profile.email_activo:
-        return NotifyResult([], [], to, "desactivado")
+        return NotifyResult([], [], "", "desactivado")
+    pending = db.high_matches_not_notified(profile.umbral_email)
     if not pending:
-        return NotifyResult([], [], to, None)
-    if not to:
-        return NotifyResult([], pending, "", "sin_email")
+        return NotifyResult([], [], "", None)
+    try:
+        to = recipient(profile)
+    except RuntimeError:
+        reason = "sin_email" if not (profile.email or os.environ.get("JOB_AGENT_EMAIL_TO")) else "destinatario"
+        return NotifyResult([], pending, "", reason)
     if sender is None:
         if config.smtp_settings() is None:
             return NotifyResult([], pending, to, "sin_smtp")
@@ -118,9 +137,7 @@ def notify_high_matches(db: Database, profile: Profile, sender=None) -> NotifyRe
 
 def send_test_email(profile: Profile) -> str:
     """Manda un mail de prueba y devuelve el destinatario. Lanza la excepción de SMTP si falla."""
-    to = os.environ.get("JOB_AGENT_EMAIL_TO") or profile.email
-    if not to:
-        raise RuntimeError("El perfil no tiene contacto.email y no está definido JOB_AGENT_EMAIL_TO.")
+    to = recipient(profile)
     if config.smtp_settings() is None:
         raise RuntimeError("Faltan JOB_AGENT_SMTP_HOST, JOB_AGENT_SMTP_USER o JOB_AGENT_SMTP_PASSWORD.")
     smtp_send(

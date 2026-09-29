@@ -39,6 +39,17 @@ def test_mail_goes_out_once_and_only_above_threshold(tmp_path, profile, monkeypa
     assert len(sent) == 1
 
 
+def test_invalid_recipient_is_not_sent(tmp_path, profile, monkeypatch):
+    monkeypatch.setenv("JOB_AGENT_EMAIL_TO", "ese mismo mail")
+    db = Database(tmp_path / "t.db")
+    _seed(db)
+    sent = []
+    result = notify_high_matches(db, _profile(profile), sender=lambda *args: sent.append(args))
+    assert result.reason == "destinatario"
+    assert result.sent == []
+    assert sent == []
+
+
 def test_bad_credentials_stop_after_first_attempt(tmp_path, profile):
     import smtplib
 

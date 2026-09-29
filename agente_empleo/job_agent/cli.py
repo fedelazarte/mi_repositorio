@@ -15,7 +15,7 @@ from .matcher import score_job, score_jobs
 from .models import CLOSED_STATUSES, STATUSES, Job
 from .profile import Profile, ProfileError
 from .sources.linkedin import LinkedInError, LinkedInGuestSource
-from .notify import notify_high_matches, send_test_email
+from .notify import notify_high_matches, recipient, send_test_email
 from .onboarding import run_onboarding
 from .tracker import auto_expire, funnel_stats, pending_follow_ups
 
@@ -81,6 +81,9 @@ def _notify(db: Database, profile: Profile, enabled: bool) -> None:
         print("Definí JOB_AGENT_SMTP_HOST, JOB_AGENT_SMTP_USER y JOB_AGENT_SMTP_PASSWORD.")
         for row in result.pending:
             print(f"  {row['score']:.0f}  {row['title']} — {row['company']}")
+    elif result.reason == "destinatario":
+        print("\nEl destinatario no es un mail válido. Tiene que ser una sola dirección, sin espacios.")
+        print("Corregí `contacto.email` en perfil.yaml, o la variable JOB_AGENT_EMAIL_TO si la definiste.")
     elif result.reason == "sin_email":
         cuantas = "1 oferta" if len(result.pending) == 1 else f"{len(result.pending)} ofertas"
         print(f"\nHay {cuantas} con match ≥ {profile.umbral_email:.0f} y el perfil no tiene contacto.email.")
@@ -380,8 +383,9 @@ def cmd_notificar(args) -> None:
     if args.prueba:
         cfg = config.smtp_settings()
         if cfg:
-            print(f"Servidor {cfg['host']}:{cfg['port']}  usuario {cfg['user']}  contraseña de {len(cfg['password'])} caracteres")
+            print(f"Servidor {cfg['host']}:{cfg['port']}  usuario {cfg['user']}  contraseña de {len(cfg['password'])} caracteres", flush=True)
         try:
+            print(f"Destinatario {recipient(profile)}", flush=True)
             to = send_test_email(profile)
         except Exception as exc:
             sys.exit(f"No pude mandar el mail de prueba: {exc}")
