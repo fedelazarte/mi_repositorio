@@ -9,9 +9,8 @@ import json
 import re
 from pathlib import Path
 
-import requests
-
 from . import config
+from .llm import LocalModelError, complete_json
 from .matcher import canon, normalize
 from .models import Job
 from .profile import Profile
@@ -174,29 +173,10 @@ def _education_tokens(profile: Profile) -> list[str]:
 
 
 def generate_with_llm(profile: Profile, job: Job) -> dict:
-    if not config.OPENAI_API_KEY:
-        raise CVError(
-            "Para armar el CV hace falta un modelo. Definí OPENAI_API_KEY "
-            "(y, si no es OpenAI, JOB_AGENT_LLM_MODEL y OPENAI_BASE_URL) y volvé a correr el comando."
-        )
     try:
-        response = requests.post(
-            f"{config.OPENAI_BASE_URL}/chat/completions",
-            headers={"Authorization": f"Bearer {config.OPENAI_API_KEY}"},
-            json={
-                "model": config.OPENAI_MODEL,
-                "temperature": 0.2,
-                "response_format": {"type": "json_object"},
-                "messages": build_messages(profile, job),
-            },
-            timeout=90,
-        )
-        response.raise_for_status()
-        return json.loads(response.json()["choices"][0]["message"]["content"])
-    except requests.RequestException as exc:
-        raise CVError(f"No pude hablar con el modelo: {exc}") from exc
-    except (KeyError, IndexError, json.JSONDecodeError, TypeError) as exc:
-        raise CVError(f"El modelo no devolvió un CV válido: {exc}") from exc
+        return complete_json(build_messages(profile, job), timeout=180)
+    except LocalModelError as exc:
+        raise CVError(str(exc)) from exc
 
 
 def _font_pair() -> tuple[str, str]:

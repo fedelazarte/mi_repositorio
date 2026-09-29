@@ -95,7 +95,7 @@ python -m job_agent matches                     # solo match de 80 o más
 python -m job_agent matches --min 60             # bajar el corte para esta corrida
 python -m job_agent matches --detalle --top 5    # con razones y brechas
 python -m job_agent ver 4446531276 --descripcion # una oferta en detalle
-python -m job_agent cv 4446531276               # CV en inglés y en PDF (requiere OPENAI_API_KEY)
+python -m job_agent cv 4446531276               # CV en inglés y en PDF, con el modelo local
 ```
 
 Ejemplo real de salida:
@@ -138,18 +138,18 @@ python -m job_agent buscar --sin-mail  # esta corrida no avisa
 
 Sin esas variables la búsqueda sigue igual y te lista por consola los matches que habría mandado. Para Gmail hace falta una [clave de aplicación](https://myaccount.google.com/apppasswords), no la contraseña de la cuenta.
 
-### Matching con LLM (opcional)
+### Modelo local
 
-Con `OPENAI_API_KEY` en el entorno, `--llm` refina el puntaje con un modelo de lenguaje que entiende contexto
-(por ejemplo, que "experiencia en herramientas de BI" cubre Power BI) y agrega un consejo para adaptar el CV a esa oferta:
+El CV y la opción `--llm` usan un modelo open source en tu máquina, vía [Ollama](https://ollama.com). El perfil no sale de la computadora.
 
 ```bash
-export OPENAI_API_KEY=sk-...
+brew install ollama
+ollama pull qwen2.5:7b
+python -m job_agent cv 4446531276
 python -m job_agent buscar --llm
-python -m job_agent repuntuar --llm     # re-evaluar todo lo ya guardado
 ```
 
-El puntaje final mezcla 40% heurística + 60% LLM. Cualquier API compatible con OpenAI sirve (`OPENAI_BASE_URL`, `JOB_AGENT_LLM_MODEL`).
+El modelo por defecto es `qwen2.5:7b`. Otro modelo: `export JOB_AGENT_LLM_MODEL=llama3.1:8b`.
 
 ## Paso 3: seguimiento de postulaciones
 

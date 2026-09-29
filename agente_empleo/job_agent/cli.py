@@ -60,10 +60,7 @@ def _open_db() -> Database:
 def _score_and_store(db: Database, jobs: list[Job], profile: Profile, use_llm: bool) -> list:
     results = score_jobs(jobs, profile)
     if use_llm:
-        if not llm.available():
-            print("Aviso: no hay OPENAI_API_KEY, se usa solo la heurística.")
-        else:
-            results = [llm.score_with_llm(j, profile, r) for j, r in zip(jobs, results)]
+        results = [llm.score_with_llm(j, profile, r) for j, r in zip(jobs, results)]
     for r in results:
         db.upsert_match(r)
     return results
@@ -373,12 +370,6 @@ def cmd_cv(args) -> None:
     db.close()
     if job is None:
         sys.exit(f"No conozco la oferta {args.id}. Tiene que estar guardada: `buscar`, `importar` o `agregar`.")
-    if not config.OPENAI_API_KEY:
-        sys.exit(
-            "Para armar el CV hace falta un modelo.\n"
-            "Definí OPENAI_API_KEY y, si no usás OpenAI, también JOB_AGENT_LLM_MODEL y OPENAI_BASE_URL.\n"
-            "Ejemplo: export OPENAI_API_KEY=sk-..."
-        )
     try:
         pdf_path = write_cv(profile, job)
     except CVError as exc:
@@ -446,7 +437,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--top", type=int, default=10, help="cuántos matches mostrar")
     sp.add_argument("--min", type=float, default=None, help="puntaje mínimo a mostrar (80 si no se indica)")
     sp.add_argument("--sin-detalle", action="store_true", help="no descargar descripciones (más rápido, peor matching)")
-    sp.add_argument("--llm", action="store_true", help="refinar con LLM (requiere OPENAI_API_KEY)")
+    sp.add_argument("--llm", action="store_true", help="refinar el puntaje con el modelo local (Ollama)")
     sp.add_argument("--sin-mail", action="store_true", help="no avisar por mail aunque el match supere el umbral")
     sp.set_defaults(func=cmd_buscar)
 
