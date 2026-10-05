@@ -73,19 +73,43 @@ def select_destacadas(rows, limit: int = 5) -> list:
     return picked
 
 
+def select_para_aplicar(rows, *, minimo: float = 90, limit: int = 3) -> list:
+    """Las mejores ofertas abiertas, de cualquier empresa, a las que vale la pena postularse."""
+    picked = []
+    for row in rows:
+        if _is_auto_reject(row):
+            continue
+        if float(row["score"]) < minimo:
+            continue
+        picked.append(row)
+        if len(picked) >= limit:
+            break
+    return picked
+
+
+def _print_oferta(row) -> None:
+    place = row["location"] or ""
+    print(f"  {row['score']:.0f}  [{row['id']}] {row['title']} — {row['company']} ({place})")
+    link = job_link(row)
+    if link:
+        print(f"       {link}")
+
+
 def _print_destacadas(db: Database) -> None:
     rows = db.list_matches(min_score=0, statuses=_open_for_highlight(), limit=5000)
     picked = select_destacadas(rows)
     print("\nDestacadas Tier 1")
     if not picked:
         print("  Ninguna empresa de la lista entre las ofertas abiertas.")
-        return
     for row in picked:
-        place = row["location"] or ""
-        print(f"  {row['score']:.0f}  [{row['id']}] {row['title']} — {row['company']} ({place})")
-        link = job_link(row)
-        if link:
-            print(f"       {link}")
+        _print_oferta(row)
+    aplicar = select_para_aplicar(rows)
+    print("\nAplicar sí o sí")
+    if not aplicar:
+        print("  Ninguna oferta abierta llega a 90.")
+        return
+    for row in aplicar:
+        _print_oferta(row)
 
 
 def _load_profile() -> Profile:

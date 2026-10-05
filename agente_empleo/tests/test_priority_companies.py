@@ -52,6 +52,21 @@ def test_destacadas_keeps_the_five_best_priority_companies():
     assert picked == ["Google", "Nike", "Uber", "Red Bull", "Bolt"]
 
 
+def test_aplicar_is_the_top_three_at_or_above_90():
+    from job_agent.cli import select_para_aplicar
+
+    rows = [
+        {"company": "Glovo", "score": 98, "gaps": '["Rechazo automático: piden búlgaro"]'},
+        {"company": "Fanatics", "score": 96, "gaps": "[]"},
+        {"company": "Taller", "score": 93, "gaps": "[]"},
+        {"company": "Google", "score": 91, "gaps": "[]"},
+        {"company": "Nike", "score": 90, "gaps": "[]"},
+        {"company": "Uber", "score": 89, "gaps": "[]"},
+    ]
+    picked = [row["company"] for row in select_para_aplicar(rows)]
+    assert picked == ["Fanatics", "Taller", "Google"]
+
+
 def test_priority_adds_points_without_hiding_other_companies(profile):
     fanatics = score_job(_job("Fanatics"), profile)
     small = score_job(_job("Taller de Datos"), profile)
