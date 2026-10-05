@@ -14,6 +14,7 @@ from . import config, llm
 from .db import Database
 from .matcher import score_job, score_jobs
 from .models import CLOSED_STATUSES, STATUSES, Job
+from .priority_companies import priority_company
 from .profile import Profile, ProfileError
 from .schedule import install_daily
 from .sources.linkedin import LinkedInError, LinkedInGuestSource
@@ -45,6 +46,33 @@ def _min_a_mostrar(profile: Profile, explicito: float | None) -> float:
     if explicito is not None:
         return explicito
     return max(MIN_MATCH_MOSTRADO, profile.puntaje_minimo)
+
+
+def _open_for_highlight() -> list[str]:
+    return [status for status in STATUSES if status not in CLOSED_STATUSES and status not in ("postulado", "en_revision", "entrevista")]
+
+
+def select_destacadas(rows, limit: int = 5) -> list:
+    """Las mejores ofertas cuya empresa está en la lista prioritaria. `rows` ya viene ordenado por puntaje."""
+    picked = []
+    for row in rows:
+        if priority_company(row["company"]):
+            picked.append(row)
+        if len(picked) >= limit:
+            break
+    return picked
+
+
+def _print_destacadas(db: Database) -> None:
+    rows = db.list_matches(min_score=0, statuses=_open_for_highlight(), limit=5000)
+    picked = select_destacadas(rows)
+    print("\nDestacadas Tier 1")
+    if not picked:
+        print("  Ninguna empresa de la lista entre las ofertas abiertas.")
+        return
+    for row in picked:
+        place = row["location"] or ""
+        print(f"  {row['score']:.0f}  [{row['id']}] {row['title']} — {row['company']} ({place})")
 
 
 def _load_profile() -> Profile:
@@ -182,6 +210,8 @@ def cmd_buscar(args) -> None:
     for row in rows:
         _print_match_row(row)
     _notify(db, profile, not args.sin_mail)
+    if not getattr(args, "sin_destacadas", False):
+        _print_destacadas(db)
     db.close()
 
 
@@ -237,6 +267,7 @@ def cmd_matches(args) -> None:
             [12, 5, 12, 38, 24, 22, 10],
         )
         print("\nUsá `ver <ID>` para el detalle, `postular <ID>` cuando te postules.")
+    _print_destacadas(db)
     db.close()
 
 
@@ -397,9 +428,13 @@ def cmd_diario(args) -> None:
     args.min = None
     args.top = 10
     args.sin_mail = False
+    args.sin_destacadas = True
     cmd_buscar(args)
     args.auto = True
     cmd_seguimiento(args)
+    db = _open_db()
+    _print_destacadas(db)
+    db.close()
 
 
 def cmd_conocer(args) -> None:

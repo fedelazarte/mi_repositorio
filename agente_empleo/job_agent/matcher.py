@@ -23,7 +23,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 from .models import Job, MatchResult
 from .places import matching_preference
 from .priority_companies import BONUS as PRIORITY_BONUS
-from .priority_companies import priority_company
+from .priority_companies import priority_company as priority_company_name
 from .profile import Profile
 
 WEIGHTS = {
@@ -408,7 +408,7 @@ def score_job(job: Job, profile: Profile, text_similarity: float = 0.0) -> Match
     if text_similarity >= 0.6:
         reasons.append("La descripción se parece mucho a tu experiencia")
 
-    prioritized = priority_company(job.company)
+    prioritized = priority_company_name(job.company)
     if prioritized:
         total += PRIORITY_BONUS
         reasons.append(f"Empresa prioritaria: {prioritized}")

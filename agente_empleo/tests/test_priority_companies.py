@@ -32,6 +32,23 @@ def test_priority_matches_the_company_and_not_a_lookalike():
     assert priority_company("Taller de Datos") is None
 
 
+def test_destacadas_keeps_the_five_best_priority_companies():
+    from job_agent.cli import select_destacadas
+
+    rows = [
+        {"company": "Taller chico", "score": 99},
+        {"company": "Fanatics", "score": 96},
+        {"company": "Otro", "score": 95},
+        {"company": "Google", "score": 91},
+        {"company": "Nike", "score": 90},
+        {"company": "Uber", "score": 88},
+        {"company": "Red Bull", "score": 87},
+        {"company": "Bolt", "score": 80},
+    ]
+    picked = [row["company"] for row in select_destacadas(rows)]
+    assert picked == ["Fanatics", "Google", "Nike", "Uber", "Red Bull"]
+
+
 def test_priority_adds_points_without_hiding_other_companies(profile):
     fanatics = score_job(_job("Fanatics"), profile)
     small = score_job(_job("Taller de Datos"), profile)
