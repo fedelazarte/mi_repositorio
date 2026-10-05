@@ -18,7 +18,7 @@ from .priority_companies import priority_company
 from .profile import Profile, ProfileError
 from .schedule import install_daily
 from .sources.linkedin import LinkedInError, LinkedInGuestSource
-from .notify import notify_high_matches, recipient, send_test_email
+from .notify import job_link, notify_high_matches, recipient, send_test_email
 from .onboarding import run_onboarding
 from .tracker import auto_expire, funnel_stats, pending_follow_ups
 
@@ -73,6 +73,9 @@ def _print_destacadas(db: Database) -> None:
     for row in picked:
         place = row["location"] or ""
         print(f"  {row['score']:.0f}  [{row['id']}] {row['title']} — {row['company']} ({place})")
+        link = job_link(row)
+        if link:
+            print(f"       {link}")
 
 
 def _load_profile() -> Profile:
