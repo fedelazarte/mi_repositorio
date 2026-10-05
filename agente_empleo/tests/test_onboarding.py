@@ -120,6 +120,25 @@ ANSWERS = {
 }
 
 
+def test_cv_ignores_section_banners_and_separator_lines():
+    text = """
+--- DATOS PERSONALES ---
+====================================================
+Ana Pérez
+Data Analyst
+ana@example.com
+
+Experiencia
+Data Analyst | Empresa Real S.A. | 2022 - actualidad
+- SQL y Python
+"""
+    draft = parse_cv_text(text)
+    assert draft["nombre"] == "Ana Pérez"
+    assert draft["titulo_actual"] == "Data Analyst"
+    assert "DATOS" not in draft["nombre"]
+    assert "=" not in draft["titulo_actual"]
+
+
 def test_parse_cv_text_extracts_history_and_skills():
     draft = parse_cv_text(CV)
     assert draft["nombre"] == "Ana Pérez"

@@ -22,7 +22,22 @@ SECTION_NAMES = {
     "idiomas": ["idiomas", "languages"],
 }
 HEADER_TO_SECTION = {normalize(name): key for key, names in SECTION_NAMES.items() for name in names}
-SKIP_NAME = {"curriculum vitae", "curriculum", "cv", "resume", "hoja de vida", "perfil profesional"}
+SKIP_NAME = {
+    "curriculum vitae", "curriculum", "cv", "resume", "hoja de vida", "perfil profesional",
+    "datos personales", "informacion personal", "informacion de contacto", "contacto",
+    "datos de contacto", "personal information", "personal details",
+}
+
+
+def _is_decoration(line: str) -> bool:
+    """Líneas de adorno o títulos de sección, no un nombre ni un puesto."""
+    stripped = line.strip()
+    letters = re.sub(r"[^A-Za-zÁÉÍÓÚáéíóúÑñ]", "", stripped)
+    if len(letters) < 2:
+        return True
+    label = normalize(re.sub(r"[^a-zA-ZáéíóúñÁÉÍÓÚ ]", " ", stripped))
+    label = re.sub(r"\s+", " ", label).strip()
+    return label in SKIP_NAME or label in HEADER_TO_SECTION
 
 ROLE_RE = re.compile(
     r"^(?P<puesto>[^|\n]{2,80}?)\s*[|\-–—]\s*(?P<empresa>[^|\n]{2,80}?)\s*[|\-–—(]\s*(?P<periodo>[^)\n]*\d{4}[^)\n]*)\)?\s*$"
@@ -140,20 +155,20 @@ def _unique(items: list[str]) -> list[str]:
 
 def _guess_name(preamble: list[str]) -> str:
     for line in preamble:
-        if normalize(line) in SKIP_NAME or "@" in line or "linkedin.com" in line.lower():
+        if _is_decoration(line) or "@" in line or "linkedin.com" in line.lower():
             continue
-        words = line.split()
+        words = [word for word in re.sub(r"[-=_*#|]+", " ", line).split() if word]
         if 2 <= len(words) <= 5 and len(line) <= 60 and not any(ch.isdigit() for ch in line):
-            return line
+            return " ".join(words)
     return ""
 
 
 def _guess_title(preamble: list[str], name: str, experiencia: list[dict]) -> str:
     for line in preamble:
-        if line == name or "@" in line or "linkedin.com" in line.lower() or len(line) > 80:
+        if line == name or _is_decoration(line) or "@" in line or "linkedin.com" in line.lower() or len(line) > 80:
             continue
         if not any(ch.isdigit() for ch in line):
-            return line
+            return line.strip()
     return experiencia[0]["puesto"] if experiencia else ""
 
 
