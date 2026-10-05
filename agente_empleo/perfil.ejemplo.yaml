@@ -104,4 +104,4 @@ seguimiento:
 # Mail solo cuando el match es realmente alto.
 notificaciones:
   email: true
-  umbral_match: 85
+  umbral_match: 90

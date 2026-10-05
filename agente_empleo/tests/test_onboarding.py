@@ -244,7 +244,7 @@ def test_conocer_builds_profile_and_ignores_example_biography(tmp_path: Path):
     assert profile.relocation_destinos == ["España", "Ciudad de México"]
     assert profile.salario_minimo == 3000
     assert profile.email == "ana@example.com"
-    assert profile.umbral_email == 85
+    assert profile.umbral_email == 90
     assert profile.viaje == "no"
     assert "Empresa Real S.A." in {e["empresa"] for e in profile.experiencia}
     assert any(q.get("remoto") for q in profile.consultas)

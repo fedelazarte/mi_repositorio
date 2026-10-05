@@ -72,7 +72,7 @@ class Profile:
         self.puntaje_minimo: float = float(seg.get("puntaje_minimo_para_recomendar") or 80)
         notif = data.get("notificaciones") or {}
         self.email_activo: bool = bool(notif.get("email", True))
-        self.umbral_email: float = float(notif.get("umbral_match", 85))
+        self.umbral_email: float = float(notif.get("umbral_match", 90))
 
         if not self.habilidades:
             raise ProfileError("El perfil necesita al menos una entrada en `habilidades`.")

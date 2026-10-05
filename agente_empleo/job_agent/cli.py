@@ -4,6 +4,7 @@ import argparse
 import csv
 import json
 import logging
+import os
 import shutil
 import sys
 from datetime import date
@@ -14,6 +15,7 @@ from .db import Database
 from .matcher import score_job, score_jobs
 from .models import CLOSED_STATUSES, STATUSES, Job
 from .profile import Profile, ProfileError
+from .schedule import install_daily
 from .sources.linkedin import LinkedInError, LinkedInGuestSource
 from .notify import notify_high_matches, recipient, send_test_email
 from .onboarding import run_onboarding
@@ -362,6 +364,44 @@ def cmd_repuntuar(args) -> None:
     db.close()
 
 
+def cmd_diario(args) -> None:
+    if args.instalar:
+        try:
+            result = install_daily(workdir=config.HOME, hour=args.hora, minute=args.minuto)
+        except ValueError as exc:
+            sys.exit(str(exc))
+        if sys.platform == "darwin":
+            uid = os.getuid()
+            target = f"gui/{uid}"
+            plist = result
+            os.system(f"launchctl bootout {target} {plist} >/dev/null 2>&1")
+            code = os.system(f"launchctl bootstrap {target} {plist}")
+            print(f"Corrida diaria instalada a las {args.hora:02d}:{args.minuto:02d}.")
+            print(f"  {plist}")
+            print(f"  Log: {config.HOME / 'diario.log'}")
+            if code != 0:
+                print("No pude activarla con launchctl. El archivo quedó escrito; revisá el mensaje de arriba.")
+            if "JOB_AGENT_SMTP_PASSWORD" not in os.environ:
+                print("Aviso: no había contraseña SMTP en esta terminal. El mail de las 9 no va a salir hasta que reinstales con las variables cargadas (`source ~/.zshrc`).")
+        else:
+            print("Agregá esta línea con `crontab -e`:")
+            print(result)
+        return
+    print(f"Corrida diaria ({date.today().isoformat()}): busco ofertas y reviso postulaciones.\n")
+    args.keywords = None
+    args.location = ""
+    args.remoto = False
+    args.limite = None
+    args.sin_detalle = False
+    args.llm = False
+    args.min = None
+    args.top = 10
+    args.sin_mail = False
+    cmd_buscar(args)
+    args.auto = True
+    cmd_seguimiento(args)
+
+
 def cmd_conocer(args) -> None:
     try:
         run_onboarding(
@@ -491,6 +531,12 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--llm", action="store_true")
     sp.add_argument("--sin-mail", action="store_true")
     sp.set_defaults(func=cmd_repuntuar)
+
+    sp = sub.add_parser("diario", help="buscar ofertas y revisar postulaciones; --instalar lo deja todos los días")
+    sp.add_argument("--instalar", action="store_true", help="programar la corrida todos los días")
+    sp.add_argument("--hora", type=int, default=9)
+    sp.add_argument("--minuto", type=int, default=0)
+    sp.set_defaults(func=cmd_diario)
 
     sp = sub.add_parser("notificar", help="enviar los mails de matches altos que todavía no se avisaron")
     sp.add_argument("--prueba", action="store_true", help="mandar un mail de prueba para verificar la configuración")

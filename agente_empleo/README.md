@@ -78,7 +78,7 @@ Editá `perfil.yaml`. Las secciones que más pesan en el matching:
 | `aspiraciones.evitar`, `empresas_evitar` | Palabras o empresas que restan puntos. |
 | `aspiraciones.remoto_excluyente`, `relocation`, `salario_minimo` | Restricciones duras que salen del cuestionario. |
 | `aspiraciones.aprendiendo` | Habilidades en las que estás trabajando: si una oferta las pide, no cuentan como brecha grave. |
-| `notificaciones.umbral_match` | A partir de qué puntaje se manda mail (85 por defecto). |
+| `notificaciones.umbral_match` | A partir de qué puntaje se manda mail (90 por defecto). |
 | `busqueda.consultas` | Qué buscar en LinkedIn (keywords + ubicación + remoto). |
 | `seguimiento` | Cada cuántos días avisar / dar por perdida una postulación. |
 
@@ -119,7 +119,7 @@ python -m job_agent agregar --titulo "Data Analyst Sr" --empresa "Globant" --url
 
 ## Aviso por mail (solo matches altos)
 
-Cada vez que `buscar`, `importar`, `agregar` o `repuntuar` encuentra una oferta **nueva** con match de **85 o más** (`notificaciones.umbral_match`), manda un mail con el puesto, la empresa, el link, las razones y las brechas. No repite el aviso de una oferta ya notificada.
+Cada vez que `buscar`, `diario`, `importar`, `agregar` o `repuntuar` encuentra ofertas **nuevas** con match de **90 o más** (`notificaciones.umbral_match`), manda **un solo mail** con todas ellas: puesto, empresa, link, razones y brechas. No repite un aviso ya enviado.
 
 ```bash
 export JOB_AGENT_SMTP_HOST=smtp.gmail.com
@@ -199,15 +199,11 @@ ya sabés dónde poner el umbral (`puntaje_minimo_para_recomendar`) y a qué ded
 ## Rutina sugerida
 
 ```bash
-# cada mañana (o con cron)
-python -m job_agent buscar && python -m job_agent seguimiento --auto
+python -m job_agent diario
+python -m job_agent diario --instalar    # todos los días a las 9:00
 ```
 
-Ejemplo de cron diario a las 9:00:
-
-```
-0 9 * * * cd /ruta/agente_empleo && JOB_AGENT_HOME=/ruta/datos .venv/bin/python -m job_agent buscar >> agente.log 2>&1
-```
+`diario` busca ofertas nuevas, manda el mail si hay matches de 90 o más y revisa el seguimiento. `--instalar` deja esa corrida programada (launchd en Mac, una línea de cron en Linux).
 
 ## Sobre LinkedIn: límites y responsabilidad
 

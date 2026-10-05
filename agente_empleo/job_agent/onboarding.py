@@ -308,7 +308,7 @@ def apply_preferences(data: dict, prompter: Prompter) -> dict:
     data["aspiraciones"] = aspiraciones
     data.setdefault("notificaciones", {})
     data["notificaciones"].setdefault("email", True)
-    data["notificaciones"].setdefault("umbral_match", 85)
+    data["notificaciones"].setdefault("umbral_match", 90)
     data.setdefault("seguimiento", {})
     data["seguimiento"].setdefault("dias_sin_respuesta_para_avisar", 10)
     data["seguimiento"].setdefault("dias_para_marcar_sin_respuesta", 30)
@@ -361,7 +361,7 @@ def _print_summary(data: dict, output) -> None:
     relocation = "sí" if data["aspiraciones"].get("relocation") else "no"
     destinos = data["aspiraciones"].get("relocation_destinos") or []
     output(f"  Relocation  : {relocation}" + (f" → {', '.join(destinos)}" if destinos else ""))
-    output(f"  Avisos      : {data.get('contacto', {}).get('email') or '(sin mail)'} cuando el match sea ≥ {data['notificaciones'].get('umbral_match', 85):.0f}")
+    output(f"  Avisos      : {data.get('contacto', {}).get('email') or '(sin mail)'} cuando el match sea ≥ {data['notificaciones'].get('umbral_match', 90):.0f}")
 
 
 def run_onboarding(

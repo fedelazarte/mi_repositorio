@@ -6,6 +6,7 @@ cv.*
 *.db-journal
 exportaciones/
 cvs/
+diario.log
 
 __pycache__/
 *.pyc
