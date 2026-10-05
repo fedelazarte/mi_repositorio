@@ -52,10 +52,20 @@ def _open_for_highlight() -> list[str]:
     return [status for status in STATUSES if status not in CLOSED_STATUSES and status not in ("postulado", "en_revision", "entrevista")]
 
 
+def _is_auto_reject(row) -> bool:
+    try:
+        gaps = row["gaps"]
+    except (KeyError, IndexError, TypeError):
+        return False
+    return bool(gaps) and "Rechazo automático" in str(gaps)
+
+
 def select_destacadas(rows, limit: int = 5) -> list:
     """Las mejores ofertas cuya empresa está en la lista prioritaria. `rows` ya viene ordenado por puntaje."""
     picked = []
     for row in rows:
+        if _is_auto_reject(row):
+            continue
         if priority_company(row["company"]):
             picked.append(row)
         if len(picked) >= limit:
@@ -154,6 +164,7 @@ def cmd_perfil(args) -> None:
     print(f"Modalidad      : {', '.join(p.modalidad) or '-'}")
     print(f"Ubicaciones    : {', '.join(p.ubicaciones) or '-'}")
     print(f"Habilidades    : {', '.join(p.habilidades)}")
+    print(f"Idiomas        : {', '.join(p.idiomas) or '-'}")
     print(f"Aprendiendo    : {', '.join(p.aprendiendo) or '-'}")
     print(f"Evitar         : {', '.join(p.evitar) or '-'}")
     print(f"Consultas      : {len(p.consultas)} (últimos {p.publicado_ultimos_dias} días)")

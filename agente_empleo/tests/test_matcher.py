@@ -149,6 +149,29 @@ def test_regions_cover_cities_in_either_language(profile):
     assert any("fuera de tus preferencias" in gap for gap in score_job(belfast, only_eu).gaps)
 
 
+def test_fluent_language_the_profile_lacks_is_an_automatic_reject(profile):
+    data = profile.raw
+    data["idiomas"] = ["español nativo", "inglés B2"]
+    from job_agent.profile import Profile
+
+    person = Profile(data)
+    bulgarian = make_job(
+        id="bg",
+        company="Glovo",
+        description="We are hiring in Sofia. Fluent Bulgarian is required. Python and SQL. Remote.",
+    )
+    result = score_job(bulgarian, person)
+    assert result.score == 0
+    assert any("búlgaro" in gap for gap in result.gaps)
+
+    english = make_job(id="en", company="Glovo", description="Fluent English is required. Python and SQL.")
+    assert score_job(english, person).score > 0
+    assert not any("Rechazo automático" in gap for gap in score_job(english, person).gaps)
+
+    optional = make_job(id="opt", company="Glovo", description="Bulgarian is a plus. Fluent English required. Python and SQL.")
+    assert not any("búlgaro" in gap for gap in score_job(optional, person).gaps)
+
+
 def test_score_is_bounded(profile):
     for job in (GOOD, BAD, GAP, make_job(id="empty", title="", description="")):
         assert 0 <= score_job(job, profile, text_similarity=1.0).score <= 100

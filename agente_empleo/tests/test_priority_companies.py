@@ -47,6 +47,9 @@ def test_destacadas_keeps_the_five_best_priority_companies():
     ]
     picked = [row["company"] for row in select_destacadas(rows)]
     assert picked == ["Fanatics", "Google", "Nike", "Uber", "Red Bull"]
+    rows[1]["gaps"] = '["Rechazo automático: piden búlgaro como idioma y no está entre los tuyos"]'
+    picked = [row["company"] for row in select_destacadas(rows)]
+    assert picked == ["Google", "Nike", "Uber", "Red Bull", "Bolt"]
 
 
 def test_priority_adds_points_without_hiding_other_companies(profile):

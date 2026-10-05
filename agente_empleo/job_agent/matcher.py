@@ -95,6 +95,54 @@ SKILL_PATTERNS = {
 
 LANGUAGE_KEYWORDS = ["ingles", "english", "portugues", "portuguese", "aleman", "german", "frances", "french", "italiano", "italian"]
 
+# Idioma canónico -> cómo puede aparecer en una oferta. El rechazo mira solo requisitos duros (fluido, nativo, excluyente).
+LANGUAGES = {
+    "ingles": ["ingles", "english"],
+    "espanol": ["espanol", "spanish", "castellano"],
+    "portugues": ["portugues", "portuguese"],
+    "bulgaro": ["bulgaro", "bulgarian"],
+    "aleman": ["aleman", "german", "deutsch"],
+    "frances": ["frances", "french"],
+    "italiano": ["italiano", "italian"],
+    "arabe": ["arabe", "arabic"],
+    "chino": ["chino", "mandarin", "chinese"],
+    "japones": ["japones", "japanese"],
+    "coreano": ["coreano", "korean"],
+    "ruso": ["ruso", "russian"],
+    "holandes": ["holandes", "dutch"],
+    "polaco": ["polaco", "polish"],
+    "turco": ["turco", "turkish"],
+    "griego": ["griego", "greek"],
+    "rumano": ["rumano", "romanian"],
+    "hungaro": ["hungaro", "hungarian"],
+    "checo": ["checo", "czech"],
+    "sueco": ["sueco", "swedish"],
+    "danes": ["danes", "danish"],
+    "fines": ["fines", "finnish"],
+    "noruego": ["noruego", "norwegian"],
+    "hebreo": ["hebreo", "hebrew"],
+    "hindi": ["hindi"],
+    "ucraniano": ["ucraniano", "ukrainian"],
+}
+LANGUAGE_LABEL = {
+    "bulgaro": "búlgaro", "ingles": "inglés", "espanol": "español", "portugues": "portugués",
+    "aleman": "alemán", "frances": "francés", "italiano": "italiano", "arabe": "árabe",
+    "chino": "chino", "japones": "japonés", "coreano": "coreano", "ruso": "ruso",
+    "holandes": "holandés", "polaco": "polaco", "turco": "turco", "griego": "griego",
+    "rumano": "rumano", "hungaro": "húngaro", "checo": "checo", "sueco": "sueco",
+    "danes": "danés", "fines": "finés", "noruego": "noruego", "hebreo": "hebreo",
+    "hindi": "hindi", "ucraniano": "ucraniano",
+}
+_LANG_HARD = re.compile(
+    r"fluent|fluency|native|nativo|nativa|materna|proficiency|proficient|command of|"
+    r"must speak|must be fluent|must have fluent|se requiere|indispensable|excluyente|"
+    r"obligatori|fluido|fluida|\bc1\b|\bc2\b"
+)
+_LANG_SOFT = re.compile(
+    r"plus|nice to have|good to have|deseable|bonus|preferibl|a plus|opcional|advantage|"
+    r"se valora|valoramos|nice-to-have|is a plus|would be a plus"
+)
+
 CONTRACT_ALIASES = {
     "full time": "full-time", "fulltime": "full-time", "jornada completa": "full-time", "tiempo completo": "full-time",
     "part time": "part-time", "parttime": "part-time", "media jornada": "part-time", "tiempo parcial": "part-time",
@@ -166,6 +214,41 @@ def detect_modality(job: Job) -> str | None:
 def canon(skill: str) -> str:
     n = normalize(skill).strip()
     return SKILL_ALIASES.get(n, n)
+
+
+def spoken_languages(profile: Profile) -> set[str]:
+    """Idiomas que la persona declara, en forma canónica. Vacío si el perfil no trae idiomas."""
+    spoken = set()
+    for idioma in profile.idiomas:
+        text = normalize(idioma)
+        for canonical, aliases in LANGUAGES.items():
+            if any(_contains(alias, text) for alias in aliases):
+                spoken.add(canonical)
+    return spoken
+
+
+def missing_required_languages(job: Job, profile: Profile) -> list[str]:
+    """Idiomas que la oferta pide como requisito duro y que no están en el perfil."""
+    spoken = spoken_languages(profile)
+    if not spoken:
+        return []
+    text = normalize(job.full_text)
+    missing = []
+    for canonical, aliases in LANGUAGES.items():
+        if canonical in spoken:
+            continue
+        for alias in aliases:
+            for match in re.finditer(r"(?<![a-z0-9+#])" + re.escape(alias) + r"(?![a-z0-9+#])", text):
+                window = text[max(0, match.start() - 70): match.end() + 40]
+                if _LANG_SOFT.search(window):
+                    continue
+                if _LANG_HARD.search(window):
+                    missing.append(LANGUAGE_LABEL.get(canonical, canonical))
+                    break
+            else:
+                continue
+            break
+    return missing
 
 
 def profile_skills(profile: Profile) -> set[str]:
@@ -412,6 +495,15 @@ def score_job(job: Job, profile: Profile, text_similarity: float = 0.0) -> Match
     if prioritized:
         total += PRIORITY_BONUS
         reasons.append(f"Empresa prioritaria: {prioritized}")
+
+    missing_languages = missing_required_languages(job, profile)
+    if missing_languages:
+        total = 0
+        gaps.append(
+            "Rechazo automático: piden "
+            + ", ".join(missing_languages)
+            + " como idioma y no está entre los tuyos"
+        )
 
     return MatchResult(job_id=job.id, score=round(max(0.0, min(100.0, total)), 1), reasons=reasons, gaps=gaps)
 
